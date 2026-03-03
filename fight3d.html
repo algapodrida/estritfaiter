@@ -1,0 +1,1059 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<title>TORERO vs KARATEKA</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Black+Han+Sans&family=Rajdhani:wght@500;600;700&display=swap');
+  *, *::before, *::after { margin:0; padding:0; box-sizing:border-box; }
+  :root { --gold:#d4a017; --red:#c0392b; --dark:#0d0d0d; }
+
+  body {
+    background:var(--dark);
+    display:flex; flex-direction:column;
+    align-items:center; justify-content:center;
+    min-height:100vh;
+    font-family:'Rajdhani',sans-serif;
+    overflow:hidden; user-select:none;
+  }
+
+  #gameWrap { position:relative; width:960px; }
+
+  /* ── HUD ── */
+  #hud { display:flex; align-items:stretch; gap:8px; padding:0 0 6px; }
+  .hud-side { flex:1; display:flex; flex-direction:column; gap:3px; }
+  .hud-side.right { align-items:flex-end; }
+  .fighter-name {
+    font-family:'Black Han Sans',sans-serif;
+    font-size:12px; letter-spacing:3px;
+    color:#fff; text-transform:uppercase; opacity:0.9;
+  }
+  .bar-track {
+    width:100%; height:18px;
+    background:#1a1a1a; border:1px solid #2a2a2a; overflow:hidden;
+  }
+  .right .bar-track { transform:scaleX(-1); }
+  .bar-fill {
+    height:100%; width:100%;
+    transition:width 0.08s linear;
+    background:linear-gradient(90deg,#b8960a,#f0c030);
+    position:relative;
+  }
+  .bar-fill::after {
+    content:''; position:absolute; inset:1px 0 auto;
+    height:4px; background:rgba(255,255,255,0.2);
+  }
+  .bar-fill.med { background:linear-gradient(90deg,#b84000,#e86020); }
+  .bar-fill.low { background:linear-gradient(90deg,#900,#d02020); }
+  .wins-row { display:flex; gap:4px; }
+  .win-pip { width:10px; height:10px; border:1px solid #444; background:transparent; }
+  .win-pip.filled { background:var(--gold); border-color:var(--gold); }
+  #timer-box {
+    min-width:56px; background:#111; border:1px solid #2a2a2a;
+    font-family:'Black Han Sans',sans-serif; font-size:30px; color:#fff;
+    text-align:center; display:flex; align-items:center; justify-content:center;
+    line-height:1; padding:0 8px;
+  }
+
+  /* ── Canvas ── */
+  #canvas3d { display:block; width:960px; height:440px; border:1px solid #1e1e1e; }
+
+  /* ── 2D overlays ── */
+  #announcer {
+    position:absolute; inset:0;
+    display:flex; align-items:center; justify-content:center;
+    pointer-events:none; z-index:20;
+  }
+  #announcer-text {
+    font-family:'Black Han Sans',sans-serif; font-size:64px; color:#fff;
+    text-shadow:0 0 40px rgba(212,160,23,0.9), 4px 4px 0 #000;
+    letter-spacing:4px;
+    transform:scale(0); opacity:0;
+    transition:transform 0.18s cubic-bezier(0.34,1.56,0.64,1), opacity 0.15s;
+    white-space:nowrap;
+  }
+  #announcer-text.show { transform:scale(1); opacity:1; }
+  #sparks {
+    position:absolute; top:52px; left:0;
+    width:960px; height:440px;
+    pointer-events:none; z-index:10;
+  }
+  #controls {
+    display:flex; justify-content:space-between;
+    padding:6px 2px 0; font-size:10px; color:#333;
+    letter-spacing:0.5px; line-height:1.8;
+  }
+  #controls span { color:#555; }
+  .combo-pop {
+    position:absolute;
+    font-family:'Black Han Sans',sans-serif; font-size:28px;
+    color:var(--gold);
+    text-shadow:2px 2px 0 #000, 0 0 20px rgba(212,160,23,0.6);
+    pointer-events:none; z-index:30;
+    animation:comboPop 1.2s forwards;
+  }
+  @keyframes comboPop {
+    0%   { transform:scale(0.5) translateY(0); opacity:1; }
+    20%  { transform:scale(1.2) translateY(-5px); opacity:1; }
+    80%  { transform:scale(1) translateY(-20px); opacity:1; }
+    100% { transform:scale(0.8) translateY(-35px); opacity:0; }
+  }
+
+  /* ── Full-cover screens ── */
+  .screen {
+    position:absolute; inset:0; z-index:50;
+    display:none; flex-direction:column;
+    align-items:center; justify-content:center;
+    font-family:'Black Han Sans',sans-serif;
+    color:#fff; letter-spacing:2px;
+    transition:opacity 0.3s;
+  }
+  .screen.visible { display:flex; }
+
+  /* loading */
+  #loadScreen { background:#0d0d0d; }
+
+  /* character select */
+  #selectScreen { background:rgba(0,0,0,0.94); }
+  .char-card {
+    width:175px; padding:22px 16px;
+    border:2px solid #222; background:#080808;
+    text-align:center; cursor:default;
+    transition:border-color 0.12s, background 0.12s;
+    position:relative;
+  }
+  .char-card.sp1  { border-color:#c0392b; background:#130606; }
+  .char-card.sp2  { border-color:#2471a3; background:#060d13; }
+  .char-card.both { border-color:#8e44ad; background:#0d0610; }
+  .badge {
+    display:none; position:absolute; top:6px;
+    font-size:9px; padding:2px 6px;
+    font-family:'Rajdhani',sans-serif; font-weight:700; letter-spacing:1px;
+  }
+  .badge.b1 { left:6px;  background:#c0392b; }
+  .badge.b2 { right:6px; background:#2471a3; }
+
+  /* game over */
+  #gameOverScreen { background:rgba(0,0,0,0.95); }
+  .btn {
+    background:none; font-family:'Black Han Sans',sans-serif;
+    font-size:13px; letter-spacing:3px; padding:12px 28px; cursor:pointer;
+    transition:background 0.12s, color 0.12s;
+  }
+  .btn-gold { border:2px solid var(--gold); color:var(--gold); }
+  .btn-gold:hover { background:var(--gold); color:#000; }
+  .btn-dim  { border:2px solid #333; color:#555; }
+  .btn-dim:hover  { background:#333; color:#ccc; }
+</style>
+</head>
+<body>
+<div id="gameWrap">
+
+  <!-- HUD -->
+  <div id="hud">
+    <div class="hud-side left">
+      <div class="fighter-name" id="name1">KARATEKA</div>
+      <div class="bar-track"><div class="bar-fill" id="bar1"></div></div>
+      <div class="wins-row">
+        <div class="win-pip" id="p1w1"></div>
+        <div class="win-pip" id="p1w2"></div>
+      </div>
+    </div>
+    <div id="timer-box">99</div>
+    <div class="hud-side right">
+      <div class="fighter-name" id="name2">TORERO</div>
+      <div class="bar-track"><div class="bar-fill" id="bar2"></div></div>
+      <div class="wins-row">
+        <div class="win-pip" id="p2w1"></div>
+        <div class="win-pip" id="p2w2"></div>
+      </div>
+    </div>
+  </div>
+
+  <canvas id="canvas3d"></canvas>
+  <canvas id="sparks"></canvas>
+  <div id="announcer"><div id="announcer-text"></div></div>
+
+  <div id="controls">
+    <div>
+      <span>P1</span><br>
+      Mover: A D &nbsp;|&nbsp; Saltar: W &nbsp;|&nbsp; Agachar: S<br>
+      Puños L/M/F: U I O &nbsp;|&nbsp; Patadas L/M/F: J K L
+    </div>
+    <div style="text-align:right">
+      <span>P2</span><br>
+      Mover: ← → &nbsp;|&nbsp; Saltar: ↑ &nbsp;|&nbsp; Agachar: ↓<br>
+      Puños L/M/F: 1 2 3 &nbsp;|&nbsp; Patadas L/M/F: 4 5 6
+    </div>
+  </div>
+
+  <!-- LOADING SCREEN -->
+  <div class="screen visible" id="loadScreen">
+    <div style="font-size:10px;letter-spacing:7px;color:#333;margin-bottom:14px;">PREPARANDO ARENA</div>
+    <div style="font-size:46px;letter-spacing:5px;margin-bottom:36px;">
+      TORERO <span style="color:var(--gold)">VS</span> KARATEKA
+    </div>
+    <div style="width:320px;height:3px;background:#151515;border:1px solid #1e1e1e;">
+      <div id="loadBar" style="width:0%;height:100%;background:var(--gold);transition:width 0.4s;"></div>
+    </div>
+    <div id="loadMsg" style="font-size:10px;color:#333;margin-top:12px;letter-spacing:4px;">CARGANDO MODELOS...</div>
+  </div>
+
+  <!-- CHARACTER SELECT -->
+  <div class="screen" id="selectScreen">
+    <div style="font-size:10px;letter-spacing:7px;color:#333;margin-bottom:10px;">SELECCIONA TU LUCHADOR</div>
+    <div style="font-size:36px;letter-spacing:4px;margin-bottom:30px;">ELIGE PERSONAJE</div>
+    <div style="display:flex;gap:28px;margin-bottom:28px;" id="charCards"></div>
+    <div style="font-size:10px;color:#222;letter-spacing:2px;line-height:2.2;text-align:center;">
+      P1 &nbsp;·&nbsp; A / D mover &nbsp;·&nbsp; U confirmar<br>
+      P2 &nbsp;·&nbsp; ← / → mover &nbsp;·&nbsp; 1 confirmar
+    </div>
+    <div id="selStatus" style="margin-top:16px;font-size:13px;color:var(--gold);letter-spacing:3px;min-height:20px;"></div>
+  </div>
+
+  <!-- GAME OVER -->
+  <div class="screen" id="gameOverScreen">
+    <div style="font-size:10px;letter-spacing:7px;color:#333;margin-bottom:10px;">COMBATE TERMINADO</div>
+    <div style="font-size:54px;letter-spacing:5px;margin-bottom:6px;
+                text-shadow:0 0 40px rgba(212,160,23,0.7);">¡CAMPEÓN!</div>
+    <div id="goName" style="font-size:22px;letter-spacing:5px;color:var(--gold);margin-bottom:44px;"></div>
+    <div style="display:flex;gap:14px;">
+      <button class="btn btn-gold" id="btnRematch">REVANCHA</button>
+      <button class="btn btn-dim"  id="btnReselect">CAMBIAR LUCHADORES</button>
+    </div>
+  </div>
+
+</div><!-- /gameWrap -->
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js"></script>
+<script>
+'use strict';
+
+// ═══════════════════════════════════════════════════════
+//  CONSTANTS
+// ═══════════════════════════════════════════════════════
+const ARENA_HALF  = 4.5;
+const GRAVITY     = 25;
+const JUMP_VY     = 10;
+const WALK_SPEED  = 3.5;
+const FIGHTER_SEP = 0.6;
+
+// Paths relative to index.html
+// Structure: /models/karateka.glb, /models/torero.glb
+// If torero.glb is missing, karateka.glb is used as fallback
+const GLB_PATHS = {
+  karateka: 'models/karateka.glb',
+  torero:   'models/torero.glb',   // replace with your torero model when ready
+};
+
+// Exact clip names baked into the merged GLB
+// Source animations:
+//   idle         ← Alert (standing guard)
+//   walk         ← Walking
+//   crouch       ← Arise (crouch/rise transition)
+//   punch        ← Boxing_Practice
+//   kick         ← Skill_01
+//   block        ← Agree_Gesture (arms up)
+//   hit_reaction ← Skill_03 (impact reaction)
+//   ko_fall      ← Dead
+//   win          ← Attack (dramatic finish)
+const ANIM = {
+  idle:    'idle',
+  walk:    'walk',
+  crouch:  'crouch',
+  punch:   'punch',
+  kick:    'kick',
+  block:   'block',
+  hit:     'hit_reaction',
+  ko:      'ko_fall',
+  win:     'win',
+};
+
+const MOVES = {
+  punch_light:  { damage:5,  stun:8,  startup:6,  active:4, recovery:8,  range:1.4, height:'mid' },
+  punch_medium: { damage:10, stun:12, startup:9,  active:5, recovery:12, range:1.5, height:'mid' },
+  punch_heavy:  { damage:18, stun:20, startup:14, active:6, recovery:18, range:1.6, height:'mid' },
+  kick_light:   { damage:6,  stun:9,  startup:7,  active:4, recovery:9,  range:1.6, height:'low' },
+  kick_medium:  { damage:12, stun:14, startup:10, active:5, recovery:14, range:1.8, height:'low' },
+  kick_heavy:   { damage:20, stun:24, startup:16, active:6, recovery:20, range:2.0, height:'low' },
+};
+
+const ROSTER = [
+  { key:'karateka', label:'KARATEKA', color:'#ffffff', accent:'#c0392b', emoji:'🥋', desc:'Artes marciales · Japón' },
+  { key:'torero',   label:'TORERO',   color:'#d4af37', accent:'#800000', emoji:'🐂', desc:'Tauromaquia · España'   },
+];
+
+// ═══════════════════════════════════════════════════════
+//  THREE.JS — RENDERER & SCENE
+// ═══════════════════════════════════════════════════════
+const cvs = document.getElementById('canvas3d');
+const renderer = new THREE.WebGLRenderer({ canvas:cvs, antialias:true });
+renderer.setSize(960, 440);
+renderer.shadowMap.enabled  = true;
+renderer.shadowMap.type     = THREE.PCFSoftShadowMap;
+renderer.outputEncoding     = THREE.sRGBEncoding;
+renderer.toneMapping        = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.2;
+
+const scene  = new THREE.Scene();
+scene.background = new THREE.Color(0x180707);
+scene.fog        = new THREE.Fog(0x180707, 18, 36);
+
+const camera = new THREE.PerspectiveCamera(42, 960/440, 0.1, 100);
+camera.position.set(0, 2.8, 11);
+camera.lookAt(0, 1.2, 0);
+
+// Lighting
+scene.add(new THREE.AmbientLight(0xffe8cc, 0.45));
+const sun = new THREE.DirectionalLight(0xfff0d0, 1.7);
+sun.position.set(3, 9, 5);
+sun.castShadow = true;
+sun.shadow.mapSize.set(2048,2048);
+Object.assign(sun.shadow.camera, { near:.1, far:30, left:-9, right:9, top:9, bottom:-2 });
+sun.shadow.bias = -0.001;
+scene.add(sun);
+
+const rimL = new THREE.PointLight(0xff3300, 0.9, 14);
+rimL.position.set(-5, 3, 2);
+scene.add(rimL);
+const rimR = new THREE.PointLight(0x3399ff, 0.5, 14);
+rimR.position.set(5, 3, 2);
+scene.add(rimR);
+
+// Floor
+const floorMesh = new THREE.Mesh(
+  new THREE.PlaneGeometry(22, 14),
+  new THREE.MeshStandardMaterial({ color:0xc09050, roughness:0.88, metalness:0.04 })
+);
+floorMesh.rotation.x = -Math.PI/2;
+floorMesh.receiveShadow = true;
+scene.add(floorMesh);
+
+// Floor lines
+[[-ARENA_HALF,-5,-ARENA_HALF,5],[ARENA_HALF,-5,ARENA_HALF,5],[0,-5,0,5]].forEach(([x1,z1,x2,z2])=>{
+  const g = new THREE.BufferGeometry().setFromPoints([
+    new THREE.Vector3(x1,.003,z1), new THREE.Vector3(x2,.003,z2)
+  ]);
+  scene.add(new THREE.Line(g, new THREE.LineBasicMaterial({color:0xffffff,transparent:true,opacity:0.12})));
+});
+
+// Arena box
+scene.add(Object.assign(
+  new THREE.Mesh(
+    new THREE.BoxGeometry(24,14,16),
+    new THREE.MeshStandardMaterial({color:0x3a0c0c,roughness:1,side:THREE.BackSide})
+  ),
+  { position: new THREE.Vector3(0,6,0) }
+));
+
+// Crowd silhouettes
+const cGeo = new THREE.SphereGeometry(0.32,6,5);
+const cMat = new THREE.MeshStandardMaterial({color:0x180404,roughness:1});
+for (let i=-9;i<=9;i+=0.85) for (let r=0;r<3;r++) {
+  const m = new THREE.Mesh(cGeo,cMat);
+  m.position.set(i, 2.6+r*0.65, -4.5+r*0.25);
+  scene.add(m);
+}
+
+// Torches
+const torchData = [];
+[-6,6].forEach((x,i)=>{
+  const tl = new THREE.PointLight(0xff6600, 1.6, 9);
+  tl.position.set(x, 3.6, -3);
+  scene.add(tl);
+
+  const stick = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.05,0.09,0.65,6),
+    new THREE.MeshStandardMaterial({color:0x4a2e00,roughness:1})
+  );
+  stick.position.set(x, 3.3, -3.9);
+  scene.add(stick);
+
+  const flame = new THREE.Mesh(
+    new THREE.SphereGeometry(0.20,7,5),
+    new THREE.MeshStandardMaterial({
+      color:0xff8800, emissive:new THREE.Color(0xff4400),
+      emissiveIntensity:2.2, transparent:true, opacity:0.88
+    })
+  );
+  flame.position.set(x, 3.75, -3.9);
+  scene.add(flame);
+  torchData.push({ flame, light:tl, phase:i*2.1 });
+});
+
+// ═══════════════════════════════════════════════════════
+//  PLACEHOLDER MESH  (used until GLB loads)
+// ═══════════════════════════════════════════════════════
+function makePlaceholder(bodyHex, accentHex) {
+  const g = new THREE.Group();
+  const bm = new THREE.MeshStandardMaterial({color:bodyHex,  roughness:.7});
+  const am = new THREE.MeshStandardMaterial({color:accentHex,roughness:.5});
+  const sm = new THREE.MeshStandardMaterial({color:0xe8c07a, roughness:.8});
+  const add = (geo,mat,x,y,z,rx=0,ry=0,rz=0)=>{
+    const m=new THREE.Mesh(geo,mat); m.position.set(x,y,z); m.rotation.set(rx,ry,rz);
+    m.castShadow=true; g.add(m);
+  };
+  add(new THREE.CylinderGeometry(.10,.09,.56,8), bm, -.15,.28,0);
+  add(new THREE.CylinderGeometry(.10,.09,.56,8), bm,  .15,.28,0);
+  add(new THREE.BoxGeometry(.43,.52,.23),         bm,  0, .80,0);
+  add(new THREE.BoxGeometry(.45,.07,.25),         am,  0, .56,0);
+  add(new THREE.CylinderGeometry(.07,.065,.45,7), bm, -.28,.77,0, 0,0, .16);
+  add(new THREE.CylinderGeometry(.07,.065,.45,7), bm,  .28,.77,0, 0,0,-.16);
+  add(new THREE.SphereGeometry(.09,7,5),          sm, -.31,.54,0);
+  add(new THREE.SphereGeometry(.09,7,5),          sm,  .31,.54,0);
+  add(new THREE.SphereGeometry(.19,10,8),         sm,  0, 1.18,0);
+  const hb=new THREE.Mesh(new THREE.TorusGeometry(.19,.026,6,16),am);
+  hb.position.set(0,1.18,0); hb.rotation.x=Math.PI/2; g.add(hb);
+  return g;
+}
+
+// ═══════════════════════════════════════════════════════
+//  INPUT
+// ═══════════════════════════════════════════════════════
+const keys = {};
+document.addEventListener('keydown', e=>{
+  const k = e.key.length===1?e.key.toLowerCase():e.key;
+  keys[k] = true;
+  if (gamePhase!=='fight') return;
+  const atk = (fighter, ctrl)=>{
+    if (k===ctrl.punch_light)  fighter.startAttack('punch_light');
+    if (k===ctrl.punch_medium) fighter.startAttack('punch_medium');
+    if (k===ctrl.punch_heavy)  fighter.startAttack('punch_heavy');
+    if (k===ctrl.kick_light)   fighter.startAttack('kick_light');
+    if (k===ctrl.kick_medium)  fighter.startAttack('kick_medium');
+    if (k===ctrl.kick_heavy)   fighter.startAttack('kick_heavy');
+  };
+  if (p1) atk(p1, p1ctrl);
+  if (p2) atk(p2, p2ctrl);
+});
+document.addEventListener('keyup', e=>{
+  keys[e.key.length===1?e.key.toLowerCase():e.key] = false;
+});
+
+const p1ctrl = {
+  left:'a', right:'d', jump:'w', crouch:'s',
+  punch_light:'u', punch_medium:'i', punch_heavy:'o',
+  kick_light:'j',  kick_medium:'k',  kick_heavy:'l',
+};
+const p2ctrl = {
+  left:'ArrowLeft', right:'ArrowRight', jump:'ArrowUp', crouch:'ArrowDown',
+  punch_light:'1', punch_medium:'2', punch_heavy:'3',
+  kick_light:'4',  kick_medium:'5',  kick_heavy:'6',
+};
+
+// ═══════════════════════════════════════════════════════
+//  SPARKS  (2-D overlay)
+// ═══════════════════════════════════════════════════════
+const sc = document.getElementById('sparks');
+sc.width=960; sc.height=440;
+const sx = sc.getContext('2d');
+const ptcls = [];
+
+function spawnSpark(wx,wy) {
+  const v=new THREE.Vector3(wx,wy,0).project(camera);
+  const px=(v.x+1)/2*960, py=(-v.y+1)/2*440;
+  for(let i=0;i<15;i++){
+    const a=Math.random()*Math.PI*2, sp=2+Math.random()*6;
+    ptcls.push({
+      x:px,y:py, vx:Math.cos(a)*sp, vy:Math.sin(a)*sp,
+      life:1, decay:.04+Math.random()*.04,
+      r:2+Math.random()*4,
+      col:Math.random()>.5?'#ffd700':'#ff5500',
+    });
+  }
+}
+function tickSparks(){
+  sx.clearRect(0,0,960,440);
+  for(let i=ptcls.length-1;i>=0;i--){
+    const p=ptcls[i];
+    p.x+=p.vx; p.y+=p.vy; p.vy+=.35; p.life-=p.decay;
+    if(p.life<=0){ptcls.splice(i,1);continue;}
+    sx.globalAlpha=p.life; sx.fillStyle=p.col;
+    sx.beginPath(); sx.arc(p.x,p.y,p.r*p.life,0,Math.PI*2); sx.fill();
+  }
+  sx.globalAlpha=1;
+}
+
+// ═══════════════════════════════════════════════════════
+//  FIGHTER CLASS
+// ═══════════════════════════════════════════════════════
+class Fighter {
+  constructor(startX, facing, ctrl, bodyHex, accentHex, label) {
+    this.label   = label;
+    this.px      = startX;
+    this.py      = 0;
+    this.vy      = 0;
+    this.facing  = facing;   // 1=right, -1=left
+    this.hp      = 100;
+    this.maxHp   = 100;
+    this.ctrl    = ctrl;
+
+    this.state      = 'idle';
+    this.stateFrame = 0;
+    this.onGround   = true;
+
+    this.currentMove = null;
+    this.attackFrame = 0;
+    this.hitLanded   = false;
+    this.stunFrames  = 0;
+    this.hitFlash    = 0;
+    this.comboCount  = 0;
+    this.lastHitTime = 0;
+    this.jumpWalkT   = 0;   // manual walk-scrub time during jump
+
+    // mesh & shadow
+    this.mesh  = makePlaceholder(bodyHex, accentHex);
+    this.shadow = new THREE.Mesh(
+      new THREE.CircleGeometry(.38,12),
+      new THREE.MeshBasicMaterial({color:0x000000,transparent:true,opacity:.4,depthWrite:false})
+    );
+    this.shadow.rotation.x = -Math.PI/2;
+    scene.add(this.mesh);
+    scene.add(this.shadow);
+
+    // animation state
+    this.mixer   = null;
+    this.clips   = {};
+    this.actions = {};
+    this.curAnim = null;
+    this.ready   = false;
+
+    this._applyTransform();
+  }
+
+  // Apply preloaded GLTF ──────────────────────────────
+  applyGLTF(gltf) {
+    scene.remove(this.mesh);
+
+    // Clone so P1 and P2 are independent even when same character
+    const model = gltf.scene.clone(true);
+
+    // Meshy models come in at ~100x scale and rotated — normalise
+    // Find bounding box to auto-scale to ~1.8 units tall
+    const box = new THREE.Box3().setFromObject(model);
+    const size = new THREE.Vector3();
+    box.getSize(size);
+    const targetH = 1.8;
+    const scaleFactor = targetH / Math.max(size.y, 0.01);
+    model.scale.setScalar(scaleFactor);
+
+    // Re-check bottom after scale and shift so feet are at y=0
+    const box2 = new THREE.Box3().setFromObject(model);
+    model.position.y = -box2.min.y;
+
+    model.traverse(c => {
+      if (!c.isMesh) return;
+      c.castShadow = c.receiveShadow = true;
+      const ms = Array.isArray(c.material)?c.material:[c.material];
+      ms.forEach(m=>{ if(m && !m.emissive) m.emissive=new THREE.Color(0); });
+    });
+
+    this.mesh    = model;
+    this.mixer   = new THREE.AnimationMixer(model);
+    this.clips   = {};
+    this.actions = {};
+    this.curAnim = null;
+
+    gltf.animations.forEach(clip=>{
+      const cl = clip.clone();
+      this.clips[cl.name]   = cl;
+      this.actions[cl.name] = this.mixer.clipAction(cl);
+    });
+
+    console.log(`[${this.label}] anims:`, Object.keys(this.clips));
+    scene.add(this.mesh);
+    this.ready = true;
+    this._applyTransform();
+    this.playAnim(ANIM.idle);
+  }
+
+  // ── Fuzzy clip name resolver ──────────────────────────
+  _resolve(name) {
+    if (this.clips[name]) return name;
+    const lo = name.toLowerCase();
+    return Object.keys(this.clips).find(k=>
+      k.toLowerCase()===lo ||
+      k.toLowerCase().includes(lo) ||
+      lo.includes(k.toLowerCase())
+    ) ?? null;
+  }
+
+  // ── Play animation ────────────────────────────────────
+  playAnim(name, loop=true, fade=0.12) {
+    if (!this.mixer) return;
+    const key = this._resolve(name);
+    if (!key || key===this.curAnim) return;
+    this.curAnim = key;
+
+    Object.entries(this.actions).forEach(([k,a])=>{
+      if (k!==key && a.isRunning()) a.fadeOut(fade);
+    });
+    const a = this.actions[key];
+    a.setLoop(loop?THREE.LoopRepeat:THREE.LoopOnce, Infinity);
+    a.clampWhenFinished = !loop;
+    a.enabled = true;
+    a.reset().fadeIn(fade).play();
+  }
+
+  // ── Scrub walk clip manually (jump trick) ────────────
+  _scrubWalk(t) {
+    const key = this._resolve(ANIM.walk);
+    if (!key) return;
+    const a=this.actions[key], c=this.clips[key];
+    if (!a||!c) return;
+    if (!a.isRunning()) { a.setLoop(THREE.LoopRepeat,Infinity); a.play(); }
+    a.paused = true;
+    a.time   = t % c.duration;
+    this.mixer.update(0); // flush skeleton pose
+  }
+
+  // ── State change ──────────────────────────────────────
+  setState(s) { if(this.state!=='ko'){ this.state=s; this.stateFrame=0; } }
+
+  // ── Begin an attack ───────────────────────────────────
+  startAttack(move) {
+    if (this.state==='ko'||this.state==='attack'||this.stunFrames>0) return;
+    this.currentMove = move;
+    this.attackFrame = 0;
+    this.hitLanded   = false;
+    this.setState('attack');
+
+    const aName = move.startsWith('punch')?ANIM.punch:ANIM.kick;
+    const mv    = MOVES[move];
+    const dur   = (mv.startup+mv.active+mv.recovery)/60; // seconds at 60fps
+    const key   = this._resolve(aName);
+    if (key && this.clips[key])
+      this.actions[key].timeScale = Math.min(this.clips[key].duration/dur, 3);
+    this.playAnim(aName, false, 0.06);
+  }
+
+  // ── Receive a hit ─────────────────────────────────────
+  receiveHit(move, atkFacing) {
+    if (this.state==='ko') return false;
+    const mv = MOVES[move];
+
+    // Block: hold direction away from attacker
+    const bk  = atkFacing===1 ? this.ctrl.left : this.ctrl.right;
+    const bkey = bk.length===1?bk.toLowerCase():bk;
+    if (keys[bkey] && this.onGround && mv.height==='mid') {
+      this.hp = Math.max(0,this.hp-1);
+      this.hitFlash = 5;
+      this.playAnim(ANIM.block, false, 0.05);
+      return true;
+    }
+
+    this.hp         = Math.max(0, this.hp-mv.damage);
+    this.stunFrames = mv.stun;
+    this.hitFlash   = 12;
+    this.px = Math.max(-ARENA_HALF, Math.min(ARENA_HALF, this.px+atkFacing*0.35));
+
+    if (this.hp<=0) { this.setState('ko'); this.playAnim(ANIM.ko, false, 0.05); }
+    else            { this.setState('hit');  this.playAnim(ANIM.hit, false, 0.05); }
+    return true;
+  }
+
+  // ── Per-frame update ──────────────────────────────────
+  update(opponent, dt) {
+    this.stateFrame++;
+    if (this.hitFlash>0) this.hitFlash--;
+
+    // Gravity
+    if (!this.onGround) {
+      this.vy -= GRAVITY*dt;
+      this.py += this.vy*dt;
+      if (this.py<=0) {
+        this.py=0; this.vy=0; this.onGround=true;
+        if (this.state==='jump') { this.setState('idle'); this.playAnim(ANIM.idle); }
+      }
+    }
+
+    if (this.state==='ko') { if(this.mixer)this.mixer.update(dt); this._applyTransform(); return; }
+
+    // Auto-face opponent
+    if (this.state!=='attack'&&this.state!=='hit')
+      this.facing = opponent.px>this.px ? 1 : -1;
+
+    // Stun
+    if (this.stunFrames>0) {
+      this.stunFrames--;
+      if (this.stunFrames===0&&this.state==='hit') { this.setState('idle'); this.playAnim(ANIM.idle); }
+      if(this.mixer)this.mixer.update(dt); this._applyTransform(); return;
+    }
+
+    // Attack
+    if (this.state==='attack') {
+      this.attackFrame++;
+      const mv=MOVES[this.currentMove];
+      // Active window — hit detection
+      if (this.attackFrame>=mv.startup && this.attackFrame<mv.startup+mv.active && !this.hitLanded) {
+        if (Math.abs(this.px-opponent.px)<=mv.range && Math.abs(this.py-opponent.py)<1.2) {
+          if (opponent.receiveHit(this.currentMove, this.facing)) {
+            this.hitLanded = true;
+            spawnSpark((this.px+opponent.px)/2, 1.0);
+            const now=Date.now();
+            this.comboCount = now-this.lastHitTime<1500 ? this.comboCount+1 : 1;
+            this.lastHitTime = now;
+            if (this.comboCount>=2) spawnComboText(this, this.comboCount);
+          }
+        }
+      }
+      // End of recovery
+      if (this.attackFrame >= mv.startup+mv.active+mv.recovery) {
+        const ak=this._resolve(this.currentMove.startsWith('punch')?ANIM.punch:ANIM.kick);
+        if (ak&&this.actions[ak]) this.actions[ak].timeScale=1;
+        this.setState('idle'); this.currentMove=null; this.playAnim(ANIM.idle);
+      }
+      if(this.mixer)this.mixer.update(dt); this._applyTransform(); return;
+    }
+
+    // Movement
+    const c=this.ctrl;
+    const lk=c.left.length===1?c.left.toLowerCase():c.left;
+    const rk=c.right.length===1?c.right.toLowerCase():c.right;
+    const jk=c.jump.length===1?c.jump.toLowerCase():c.jump;
+    const dk=c.crouch.length===1?c.crouch.toLowerCase():c.crouch;
+    let moving=false;
+
+    if (keys[lk]) { this.px=Math.max(-ARENA_HALF,this.px-WALK_SPEED*dt); if(this.onGround)this.setState('walk'); moving=true; }
+    if (keys[rk]) { this.px=Math.min( ARENA_HALF,this.px+WALK_SPEED*dt); if(this.onGround)this.setState('walk'); moving=true; }
+
+    if (keys[jk]&&this.onGround) {
+      this.vy=JUMP_VY; this.onGround=false; this.jumpWalkT=0;
+      this.setState('jump');
+      // Freeze walk anim — will be scrubbed manually
+      if (this.ready) {
+        const wk=this._resolve(ANIM.walk);
+        if (wk&&this.actions[wk]) {
+          Object.values(this.actions).forEach(a=>a.stop());
+          this.curAnim=null;
+          const wa=this.actions[wk];
+          wa.setLoop(THREE.LoopRepeat,Infinity); wa.enabled=true; wa.paused=true; wa.time=0; wa.play();
+        }
+      }
+    }
+
+    if (keys[dk]&&this.onGround) {
+      if(this.state!=='crouch'){ this.setState('crouch'); this.playAnim(ANIM.crouch,true,.10); }
+      moving=true;
+    }
+
+    if (!moving&&this.onGround&&this.state==='walk') { this.setState('idle'); this.playAnim(ANIM.idle); }
+    if (!keys[dk]&&this.state==='crouch')            { this.setState('idle'); this.playAnim(ANIM.idle); }
+
+    // Jump: scrub walk + forward lean
+    if (this.state==='jump') {
+      this.jumpWalkT += dt*(moving?WALK_SPEED:WALK_SPEED*.55)*.8;
+      if (this.ready) this._scrubWalk(this.jumpWalkT);
+      // Lean: tilt forward on rise, back on fall
+      const lean = (this.vy>0 ? -0.20 : 0.14) * Math.min(Math.abs(this.vy)/JUMP_VY, 1);
+      this.mesh.rotation.x = lean;
+    } else {
+      this.mesh.rotation.x = 0;
+      // Un-pause walk if coming back from jump
+      const wk=this._resolve(ANIM.walk);
+      if (wk&&this.actions[wk]) this.actions[wk].paused=false;
+    }
+
+    // Idle/walk sync
+    if (this.ready&&this.state!=='jump') {
+      if (this.state==='idle') this.playAnim(ANIM.idle);
+      if (this.state==='walk') this.playAnim(ANIM.walk);
+    }
+
+    // Push fighters apart
+    const gap=this.px-opponent.px;
+    if (Math.abs(gap)<FIGHTER_SEP) { const p=(FIGHTER_SEP-Math.abs(gap))/2; this.px+=gap>0?p:-p; }
+    this.px=Math.max(-ARENA_HALF,Math.min(ARENA_HALF,this.px));
+
+    if (this.mixer&&this.state!=='jump') this.mixer.update(dt);
+    this._applyTransform();
+  }
+
+  tickMixer(dt) { if(this.mixer)this.mixer.update(dt); }
+
+  _applyTransform() {
+    this.mesh.position.set(this.px, this.py, 0);
+    if (this.state!=='jump') this.mesh.rotation.y = this.facing===1?0:Math.PI;
+    // Shadow shrinks and fades as fighter rises
+    const s=Math.max(0.25, 1-this.py*.14);
+    this.shadow.position.set(this.px, .003, 0);
+    this.shadow.scale.setScalar(s);
+    this.shadow.material.opacity=.38*s;
+  }
+
+  destroy() { scene.remove(this.mesh); scene.remove(this.shadow); }
+}
+
+// ═══════════════════════════════════════════════════════
+//  HUD
+// ═══════════════════════════════════════════════════════
+const bar1El  = document.getElementById('bar1');
+const bar2El  = document.getElementById('bar2');
+const timerEl = document.getElementById('timer-box');
+const pips = {
+  p1:[document.getElementById('p1w1'),document.getElementById('p1w2')],
+  p2:[document.getElementById('p2w1'),document.getElementById('p2w2')],
+};
+
+function updateHUD() {
+  const setBar=(f,el)=>{
+    const pct=Math.max(0,f.hp/f.maxHp*100);
+    el.style.width=pct+'%';
+    el.className='bar-fill'+(pct<25?' low':pct<50?' med':'');
+  };
+  setBar(p1,bar1El); setBar(p2,bar2El);
+  timerEl.textContent=Math.ceil(roundTimer);
+  [[p1Rounds,pips.p1],[p2Rounds,pips.p2]].forEach(([wins,ps])=>{
+    ps.forEach((pip,i)=>pip.classList.toggle('filled',i<wins));
+  });
+}
+
+// ═══════════════════════════════════════════════════════
+//  ANNOUNCER  +  COMBO TEXT
+// ═══════════════════════════════════════════════════════
+const annEl = document.getElementById('announcer-text');
+let annTimer = 0;
+function showAnn(txt,frames=100){ annEl.textContent=txt; annEl.classList.add('show'); annTimer=frames; }
+function hideAnn(){ annEl.classList.remove('show'); }
+
+function spawnComboText(fighter,n){
+  const el=document.createElement('div');
+  el.className='combo-pop'; el.textContent=`${n} HIT!`;
+  el.style.left=fighter===p1?'80px':'820px'; el.style.top='200px';
+  document.getElementById('gameWrap').appendChild(el);
+  setTimeout(()=>el.remove(),1200);
+}
+
+// ═══════════════════════════════════════════════════════
+//  SCREEN MANAGER
+// ═══════════════════════════════════════════════════════
+function showScreen(id){
+  document.querySelectorAll('.screen').forEach(s=>s.classList.remove('visible'));
+  document.getElementById(id)?.classList.add('visible');
+}
+function hideScreens(){
+  document.querySelectorAll('.screen').forEach(s=>s.classList.remove('visible'));
+}
+
+// ═══════════════════════════════════════════════════════
+//  CHARACTER SELECT
+// ═══════════════════════════════════════════════════════
+// Build cards
+ROSTER.forEach(r=>{
+  const card=document.createElement('div');
+  card.className='char-card'; card.id=`card_${r.key}`;
+  card.innerHTML=`
+    <div class="badge b1">P1</div>
+    <div class="badge b2">P2</div>
+    <div style="font-size:50px;margin-bottom:10px;">${r.emoji}</div>
+    <div style="font-family:'Black Han Sans',sans-serif;font-size:15px;
+                letter-spacing:3px;color:${r.color};">${r.label}</div>
+    <div style="font-size:10px;color:#383838;margin-top:8px;letter-spacing:1px;">${r.desc}</div>
+  `;
+  document.getElementById('charCards').appendChild(card);
+});
+
+const sel = { p1:0, p2:1, p1ok:false, p2ok:false };
+
+function renderSelect(){
+  ROSTER.forEach((r,i)=>{
+    const c=document.getElementById(`card_${r.key}`);
+    const isP1=sel.p1===i, isP2=sel.p2===i;
+    c.className='char-card'+(isP1&&isP2?' both':isP1?' sp1':isP2?' sp2':'');
+    c.querySelector('.b1').style.display=isP1?'block':'none';
+    c.querySelector('.b2').style.display=isP2?'block':'none';
+  });
+  const ok=(flag,i)=>flag?`✓ ${ROSTER[i].label}`:'—';
+  document.getElementById('selStatus').textContent=
+    `P1: ${ok(sel.p1ok,sel.p1)}    P2: ${ok(sel.p2ok,sel.p2)}`;
+}
+
+document.addEventListener('keydown', e=>{
+  const k=e.key.length===1?e.key.toLowerCase():e.key;
+  if(!document.getElementById('selectScreen').classList.contains('visible')) return;
+  if (!sel.p1ok){
+    if(k==='a'){ sel.p1=(sel.p1-1+ROSTER.length)%ROSTER.length; renderSelect(); }
+    if(k==='d'){ sel.p1=(sel.p1+1)%ROSTER.length;               renderSelect(); }
+    if(k==='u'||k==='i'||k==='o'){ sel.p1ok=true; renderSelect(); }
+  }
+  if (!sel.p2ok){
+    if(k==='ArrowLeft') { sel.p2=(sel.p2-1+ROSTER.length)%ROSTER.length; renderSelect(); }
+    if(k==='ArrowRight'){ sel.p2=(sel.p2+1)%ROSTER.length;               renderSelect(); }
+    if(k==='1'||k==='2'||k==='3'){ sel.p2ok=true; renderSelect(); }
+  }
+  if(sel.p1ok&&sel.p2ok) setTimeout(launchFight,350);
+});
+
+// Buttons on game over
+document.getElementById('btnRematch').addEventListener('click',()=>{
+  hideScreens(); round=1; p1Rounds=0; p2Rounds=0; launchFight();
+});
+document.getElementById('btnReselect').addEventListener('click',()=>{
+  round=1; p1Rounds=0; p2Rounds=0;
+  sel.p1=0; sel.p2=1; sel.p1ok=false; sel.p2ok=false;
+  renderSelect(); showScreen('selectScreen');
+});
+
+// ═══════════════════════════════════════════════════════
+//  GAME STATE
+// ═══════════════════════════════════════════════════════
+let p1=null, p2=null;
+let round=1, p1Rounds=0, p2Rounds=0;
+let roundTimer=99, timerAccum=0;
+let gamePhase='loading';   // loading|select|announce|fight|roundover|gameover
+let phaseFrames=0;
+
+const preloadedGLTF = {};   // key → THREE.GLTF
+
+// Preload all models once at startup
+function preloadModels(onDone){
+  const loader = new THREE.GLTFLoader();
+  const ks = Object.keys(GLB_PATHS);
+  let done=0;
+  const tick=(key,gltf)=>{
+    if(gltf) preloadedGLTF[key]=gltf;
+    done++;
+    document.getElementById('loadBar').style.width=(done/ks.length*100)+'%';
+    document.getElementById('loadMsg').textContent =
+      done<ks.length ? `CARGANDO... ${done}/${ks.length}` : '¡LISTO!';
+    if(done>=ks.length){
+      // Fallback: if torero.glb missing, reuse karateka model for P2
+      if(!preloadedGLTF.torero && preloadedGLTF.karateka){
+        console.log('torero.glb no encontrado — usando karateka como P2');
+        preloadedGLTF.torero = preloadedGLTF.karateka;
+      }
+      setTimeout(onDone,500);
+    }
+  };
+  ks.forEach(k=>loader.load(GLB_PATHS[k],
+    g=>tick(k,g),
+    null,
+    e=>{ console.warn('GLB no cargado:',GLB_PATHS[k],e); tick(k,null); }
+  ));
+}
+
+function createFighters(){
+  if(p1) p1.destroy();
+  if(p2) p2.destroy();
+
+  const r1=ROSTER[sel.p1], r2=ROSTER[sel.p2];
+  const hex=s=>parseInt(s.replace('#',''),16);
+
+  p1=new Fighter(-2,  1, p1ctrl, hex(r1.color), hex(r1.accent), r1.label);
+  p2=new Fighter( 2, -1, p2ctrl, hex(r2.color), hex(r2.accent), r2.label);
+
+  if(preloadedGLTF[r1.key]) p1.applyGLTF(preloadedGLTF[r1.key]);
+  if(preloadedGLTF[r2.key]) p2.applyGLTF(preloadedGLTF[r2.key]);
+
+  document.getElementById('name1').textContent=r1.label;
+  document.getElementById('name2').textContent=r2.label;
+}
+
+function launchFight(){ hideScreens(); startRound(); }
+
+function startRound(){
+  createFighters();
+  roundTimer=99; timerAccum=0;
+  gamePhase='announce'; phaseFrames=0;
+  showAnn(`ROUND ${round}`, 90);
+}
+
+function endRound(winner){
+  if(gamePhase==='roundover'||gamePhase==='gameover') return;
+  gamePhase='roundover';
+  const r1=ROSTER[sel.p1], r2=ROSTER[sel.p2];
+
+  if(winner===1){ p1Rounds++; p1.playAnim(ANIM.win,true); showAnn(`${r1.label} WINS!`,150); }
+  else if(winner===2){ p2Rounds++; p2.playAnim(ANIM.win,true); showAnn(`${r2.label} WINS!`,150); }
+  else showAnn('EMPATE',150);
+
+  setTimeout(()=>{
+    hideAnn();
+    if(p1Rounds>=2||p2Rounds>=2){
+      gamePhase='gameover';
+      document.getElementById('goName').textContent = p1Rounds>=2?r1.label:r2.label;
+      showScreen('gameOverScreen');
+    } else { round++; startRound(); }
+  }, 2800);
+}
+
+// ═══════════════════════════════════════════════════════
+//  MAIN LOOP
+// ═══════════════════════════════════════════════════════
+let lastTs = null;
+
+(function loop(ts){
+  requestAnimationFrame(loop);
+  const dt = Math.min((ts-(lastTs??ts))/1000, .05);
+  lastTs = ts;
+
+  // Torch flicker
+  torchData.forEach(({flame,light,phase})=>{
+    const f=Math.sin(ts*.0072+phase)*.15;
+    flame.scale.setScalar(.9+f);
+    light.intensity=1.3+f;
+  });
+
+  // Phase logic
+  switch(gamePhase){
+    case 'announce':
+      phaseFrames++;
+      p1?.tickMixer(dt); p2?.tickMixer(dt);
+      if(phaseFrames>=90){
+        hideAnn(); gamePhase='fight'; phaseFrames=0;
+        showAnn('¡PELEA!',45); setTimeout(hideAnn,800);
+      }
+      break;
+
+    case 'fight':
+      timerAccum+=dt;
+      if(timerAccum>=1){ timerAccum-=1; roundTimer=Math.max(0,roundTimer-1); }
+      if(roundTimer<=0) endRound(p1.hp>p2.hp?1:p2.hp>p1.hp?2:0);
+
+      p1.update(p2,dt);
+      p2.update(p1,dt);
+
+      if(p1.state==='ko') endRound(2);
+      else if(p2.state==='ko') endRound(1);
+
+      if(annTimer>0){ annTimer--; if(annTimer===0)hideAnn(); }
+      break;
+
+    case 'roundover':
+    case 'gameover':
+      p1?.tickMixer(dt); p2?.tickMixer(dt);
+      break;
+  }
+
+  // Hit-flash emissive tint
+  [p1,p2].forEach(f=>{
+    if(!f) return;
+    f.mesh.traverse(c=>{
+      if(!c.isMesh) return;
+      const ms=Array.isArray(c.material)?c.material:[c.material];
+      ms.forEach(m=>{
+        if(!m?.emissive) return;
+        if(f.hitFlash>0&&f.hitFlash%2===0){ m.emissive.set(0xff2200); m.emissiveIntensity=.75; }
+        else { m.emissive.set(0); m.emissiveIntensity=0; }
+      });
+    });
+  });
+
+  tickSparks();
+  if(p1&&p2) updateHUD();
+  renderer.render(scene, camera);
+})();
+
+// ═══════════════════════════════════════════════════════
+//  BOOT
+// ═══════════════════════════════════════════════════════
+showScreen('loadScreen');
+preloadModels(()=>{
+  gamePhase='select';
+  renderSelect();
+  showScreen('selectScreen');
+});
+</script>
+</body>
+</html>
