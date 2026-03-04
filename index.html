@@ -45,6 +45,27 @@
   }
   .bar-fill.med { background:linear-gradient(90deg,#b84000,#e86020); }
   .bar-fill.low { background:linear-gradient(90deg,#900,#d02020); }
+
+  /* Special meter */
+  .special-track {
+    width:100%; height:8px;
+    background:#111; border:1px solid #1a1a1a; overflow:hidden;
+  }
+  .special-fill {
+    height:100%; width:0%;
+    background:linear-gradient(90deg,#1a1aff,#00eeff);
+    transition:width 0.12s linear;
+    position:relative;
+  }
+  .special-fill.ready {
+    background:linear-gradient(90deg,#9900ff,#ff00cc);
+    animation:specialPulse 0.6s infinite alternate;
+  }
+  @keyframes specialPulse {
+    from { box-shadow: 0 0 4px #9900ff; }
+    to   { box-shadow: 0 0 14px #ff00cc, 0 0 30px #9900ff; }
+  }
+
   .wins-row { display:flex; gap:4px; }
   .win-pip { width:10px; height:10px; border:1px solid #444; background:transparent; }
   .win-pip.filled { background:var(--gold); border-color:var(--gold); }
@@ -54,6 +75,8 @@
     text-align:center; display:flex; align-items:center; justify-content:center;
     line-height:1; padding:0 8px;
   }
+  #timer-box.urgent { color:#ff3300; animation:timerPulse 0.5s infinite alternate; }
+  @keyframes timerPulse { from{opacity:1} to{opacity:0.5} }
 
   /* ── Canvas ── */
   #canvas3d { display:block; width:960px; height:440px; border:1px solid #1e1e1e; }
@@ -92,6 +115,14 @@
     pointer-events:none; z-index:30;
     animation:comboPop 1.2s forwards;
   }
+  .special-pop {
+    position:absolute;
+    font-family:'Black Han Sans',sans-serif; font-size:36px;
+    color:#ff00cc;
+    text-shadow:2px 2px 0 #000, 0 0 30px #9900ff;
+    pointer-events:none; z-index:30;
+    animation:comboPop 1.5s forwards;
+  }
   @keyframes comboPop {
     0%   { transform:scale(0.5) translateY(0); opacity:1; }
     20%  { transform:scale(1.2) translateY(-5px); opacity:1; }
@@ -110,10 +141,7 @@
   }
   .screen.visible { display:flex; }
 
-  /* loading */
   #loadScreen { background:#0d0d0d; }
-
-  /* character select */
   #selectScreen { background:rgba(0,0,0,0.94); }
   .char-card {
     width:175px; padding:22px 16px;
@@ -133,7 +161,6 @@
   .badge.b1 { left:6px;  background:#c0392b; }
   .badge.b2 { right:6px; background:#2471a3; }
 
-  /* game over */
   #gameOverScreen { background:rgba(0,0,0,0.95); }
   .btn {
     background:none; font-family:'Black Han Sans',sans-serif;
@@ -144,6 +171,25 @@
   .btn-gold:hover { background:var(--gold); color:#000; }
   .btn-dim  { border:2px solid #333; color:#555; }
   .btn-dim:hover  { background:#333; color:#ccc; }
+
+  /* Damage number floaters */
+  .dmg-pop {
+    position:absolute; font-family:'Black Han Sans',sans-serif;
+    pointer-events:none; z-index:35;
+    animation:dmgFloat 0.9s forwards;
+  }
+  @keyframes dmgFloat {
+    0%   { transform:translateY(0) scale(1); opacity:1; }
+    100% { transform:translateY(-50px) scale(0.6); opacity:0; }
+  }
+
+  /* Super flash overlay */
+  #superFlash {
+    position:absolute; inset:0; z-index:45;
+    background:white; opacity:0; pointer-events:none;
+    transition:opacity 0.08s;
+  }
+  #superFlash.active { opacity:0.85; }
 </style>
 </head>
 <body>
@@ -154,6 +200,7 @@
     <div class="hud-side left">
       <div class="fighter-name" id="name1">KARATEKA</div>
       <div class="bar-track"><div class="bar-fill" id="bar1"></div></div>
+      <div class="special-track"><div class="special-fill" id="sp1"></div></div>
       <div class="wins-row">
         <div class="win-pip" id="p1w1"></div>
         <div class="win-pip" id="p1w2"></div>
@@ -163,6 +210,7 @@
     <div class="hud-side right">
       <div class="fighter-name" id="name2">TORERO</div>
       <div class="bar-track"><div class="bar-fill" id="bar2"></div></div>
+      <div class="special-track"><div class="special-fill" id="sp2"></div></div>
       <div class="wins-row">
         <div class="win-pip" id="p2w1"></div>
         <div class="win-pip" id="p2w2"></div>
@@ -172,18 +220,19 @@
 
   <canvas id="canvas3d"></canvas>
   <canvas id="sparks"></canvas>
+  <div id="superFlash"></div>
   <div id="announcer"><div id="announcer-text"></div></div>
 
   <div id="controls">
     <div>
       <span>P1</span><br>
-      Mover: A D &nbsp;|&nbsp; Saltar: W &nbsp;|&nbsp; Agachar: S<br>
-      Puños L/M/F: U I O &nbsp;|&nbsp; Patadas L/M/F: J K L
+      Mover: A D &nbsp;|&nbsp; Saltar: W &nbsp;|&nbsp; Agachar: S &nbsp;|&nbsp; Bloquear: S+retroceder<br>
+      Puños L/M/F: U I O &nbsp;|&nbsp; Patadas L/M/F: J K L &nbsp;|&nbsp; <span style="color:#9900ff">ESPECIAL: U+J simultáneo</span>
     </div>
     <div style="text-align:right">
       <span>P2</span><br>
-      Mover: ← → &nbsp;|&nbsp; Saltar: ↑ &nbsp;|&nbsp; Agachar: ↓<br>
-      Puños L/M/F: 1 2 3 &nbsp;|&nbsp; Patadas L/M/F: 4 5 6
+      Mover: ← → &nbsp;|&nbsp; Saltar: ↑ &nbsp;|&nbsp; Agachar: ↓ &nbsp;|&nbsp; Bloquear: ↓+retroceder<br>
+      Puños L/M/F: 1 2 3 &nbsp;|&nbsp; Patadas L/M/F: 4 5 6 &nbsp;|&nbsp; <span style="color:#9900ff">ESPECIAL: 1+4 simultáneo</span>
     </div>
   </div>
 
@@ -223,7 +272,7 @@
     </div>
   </div>
 
-</div><!-- /gameWrap -->
+</div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js"></script>
@@ -234,58 +283,59 @@
 //  CONSTANTS
 // ═══════════════════════════════════════════════════════
 const ARENA_HALF  = 4.5;
-const GRAVITY     = 25;
-const JUMP_VY     = 10;
-const WALK_SPEED  = 3.5;
-const FIGHTER_SEP = 0.6;
+const GRAVITY     = 28;
+const JUMP_VY     = 11;
+const WALK_SPEED  = 3.8;
+const FIGHTER_SEP = 0.65;
 
-// Paths relative to index.html
-// Structure: /models/karateka.glb, /models/torero.glb
-// If torero.glb is missing, karateka.glb is used as fallback
 const GLB_PATHS = {
-  karateka: 'models/karateka.glb',
-  torero:   'models/torero.glb',   // replace with your torero model when ready
+  karateka: 'karateka.glb',
+  torero:   'torero.glb',
 };
 
-// Exact clip names baked into the merged GLB
-// Source animations:
-//   idle         ← Alert (standing guard)
-//   walk         ← Walking
-//   crouch       ← Arise (crouch/rise transition)
-//   punch        ← Boxing_Practice
-//   kick         ← Skill_01
-//   block        ← Agree_Gesture (arms up)
-//   hit_reaction ← Skill_03 (impact reaction)
-//   ko_fall      ← Dead
-//   win          ← Attack (dramatic finish)
 const ANIM = {
-  idle:    'idle',
-  walk:    'walk',
-  crouch:  'crouch',
-  punch:   'punch',
-  kick:    'kick',
-  block:   'block',
-  hit:     'hit_reaction',
-  ko:      'ko_fall',
-  win:     'win',
+  idle:'idle', walk:'walk', crouch:'crouch',
+  punch:'punch', kick:'kick', block:'block',
+  hit:'hit_reaction', ko:'ko_fall', win:'win',
+};
+// Exact bone names from karateka.glb (Meshy rig)
+const BONE_MAP = {
+  spine:     ['Hips'],
+  chest:     ['Spine','Spine01','Spine02'],
+  head:      ['Head','neck'],
+  lShoulder: ['LeftArm','LeftShoulder'],
+  lElbow:    ['LeftForeArm'],
+  rShoulder: ['RightArm','RightShoulder'],
+  rElbow:    ['RightForeArm'],
+  lHip:      ['LeftUpLeg'],
+  lKnee:     ['LeftLeg'],
+  rHip:      ['RightUpLeg'],
+  rKnee:     ['RightLeg'],
 };
 
 const MOVES = {
-  punch_light:  { damage:5,  stun:8,  startup:6,  active:4, recovery:8,  range:1.4, height:'mid' },
-  punch_medium: { damage:10, stun:12, startup:9,  active:5, recovery:12, range:1.5, height:'mid' },
-  punch_heavy:  { damage:18, stun:20, startup:14, active:6, recovery:18, range:1.6, height:'mid' },
-  kick_light:   { damage:6,  stun:9,  startup:7,  active:4, recovery:9,  range:1.6, height:'low' },
-  kick_medium:  { damage:12, stun:14, startup:10, active:5, recovery:14, range:1.8, height:'low' },
-  kick_heavy:   { damage:20, stun:24, startup:16, active:6, recovery:20, range:2.0, height:'low' },
+  punch_light:  { damage:5,  stun:8,  startup:6,  active:4, recovery:8,  range:1.4, height:'mid', special:5  },
+  punch_medium: { damage:10, stun:12, startup:9,  active:5, recovery:12, range:1.5, height:'mid', special:8  },
+  punch_heavy:  { damage:18, stun:20, startup:14, active:6, recovery:18, range:1.6, height:'mid', special:14 },
+  kick_light:   { damage:6,  stun:9,  startup:7,  active:4, recovery:9,  range:1.6, height:'low', special:6  },
+  kick_medium:  { damage:12, stun:14, startup:10, active:5, recovery:14, range:1.8, height:'low', special:10 },
+  kick_heavy:   { damage:20, stun:24, startup:16, active:6, recovery:20, range:2.0, height:'low', special:15 },
+  special:      { damage:35, stun:40, startup:20, active:8, recovery:25, range:2.2, height:'mid', special:0  },
 };
 
 const ROSTER = [
-  { key:'karateka', label:'KARATEKA', color:'#ffffff', accent:'#c0392b', emoji:'🥋', desc:'Artes marciales · Japón' },
-  { key:'torero',   label:'TORERO',   color:'#d4af37', accent:'#800000', emoji:'🐂', desc:'Tauromaquia · España'   },
+  { key:'karateka', label:'KARATEKA', color:'#ffffff', accent:'#c0392b', emoji:'🥋',
+    desc:'Artes marciales · Japón', special:'PUÑO DEL DRAGÓN', hpMod:1.0, speedMod:1.0 },
+  { key:'torero',   label:'TORERO',   color:'#d4af37', accent:'#800000', emoji:'🐂',
+    desc:'Tauromaquia · España',   special:'EMBESTIDA FATAL', hpMod:1.1, speedMod:0.9 },
+  { key:'ninja',    label:'NINJA',    color:'#334455', accent:'#00ccff', emoji:'🗡️',
+    desc:'Sombras · Japón',        special:'TORMENTA DE SOMBRAS', hpMod:0.85, speedMod:1.2 },
+  { key:'samurai',  label:'SAMURAI',  color:'#cc2200', accent:'#ffcc00', emoji:'⚔️',
+    desc:'Honor · Feudal',         special:'CORTE CELESTIAL', hpMod:1.15, speedMod:0.85 },
 ];
 
 // ═══════════════════════════════════════════════════════
-//  THREE.JS — RENDERER & SCENE
+//  RENDERER & SCENE
 // ═══════════════════════════════════════════════════════
 const cvs = document.getElementById('canvas3d');
 const renderer = new THREE.WebGLRenderer({ canvas:cvs, antialias:true });
@@ -347,7 +397,7 @@ scene.add(Object.assign(
   { position: new THREE.Vector3(0,6,0) }
 ));
 
-// Crowd silhouettes
+// Crowd
 const cGeo = new THREE.SphereGeometry(0.32,6,5);
 const cMat = new THREE.MeshStandardMaterial({color:0x180404,roughness:1});
 for (let i=-9;i<=9;i+=0.85) for (let r=0;r<3;r++) {
@@ -362,14 +412,11 @@ const torchData = [];
   const tl = new THREE.PointLight(0xff6600, 1.6, 9);
   tl.position.set(x, 3.6, -3);
   scene.add(tl);
-
   const stick = new THREE.Mesh(
     new THREE.CylinderGeometry(0.05,0.09,0.65,6),
     new THREE.MeshStandardMaterial({color:0x4a2e00,roughness:1})
   );
-  stick.position.set(x, 3.3, -3.9);
-  scene.add(stick);
-
+  stick.position.set(x, 3.3, -3.9); scene.add(stick);
   const flame = new THREE.Mesh(
     new THREE.SphereGeometry(0.20,7,5),
     new THREE.MeshStandardMaterial({
@@ -377,35 +424,485 @@ const torchData = [];
       emissiveIntensity:2.2, transparent:true, opacity:0.88
     })
   );
-  flame.position.set(x, 3.75, -3.9);
-  scene.add(flame);
+  flame.position.set(x, 3.75, -3.9); scene.add(flame);
   torchData.push({ flame, light:tl, phase:i*2.1 });
 });
 
+// Camera shake
+let cameraShake = { x:0, y:0, dur:0 };
+function triggerShake(intensity=0.15, frames=12) {
+  cameraShake.intensity = intensity; cameraShake.dur = frames;
+}
+
 // ═══════════════════════════════════════════════════════
-//  PLACEHOLDER MESH  (used until GLB loads)
+//  PROCEDURAL ANIMATION RIG
 // ═══════════════════════════════════════════════════════
-function makePlaceholder(bodyHex, accentHex) {
-  const g = new THREE.Group();
-  const bm = new THREE.MeshStandardMaterial({color:bodyHex,  roughness:.7});
-  const am = new THREE.MeshStandardMaterial({color:accentHex,roughness:.5});
-  const sm = new THREE.MeshStandardMaterial({color:0xe8c07a, roughness:.8});
-  const add = (geo,mat,x,y,z,rx=0,ry=0,rz=0)=>{
-    const m=new THREE.Mesh(geo,mat); m.position.set(x,y,z); m.rotation.set(rx,ry,rz);
-    m.castShadow=true; g.add(m);
+// We build a fully articulated rig with bones for procedural animation.
+// Each fighter has: torso, head, L/R upper-arm, L/R forearm, L/R hand,
+// L/R thigh, L/R shin, L/R foot
+
+function makeFighterRig(bodyHex, accentHex, style) {
+  const root    = new THREE.Group();
+  const bMat    = new THREE.MeshStandardMaterial({color:bodyHex,  roughness:.65, metalness:0.05});
+  const aMat    = new THREE.MeshStandardMaterial({color:accentHex,roughness:.45, metalness:0.15});
+  const skinMat = new THREE.MeshStandardMaterial({color:0xe8c07a, roughness:.8});
+  const darkMat = new THREE.MeshStandardMaterial({color:0x111111, roughness:1});
+
+  const add = (geo, mat, px, py, pz) => {
+    const m = new THREE.Mesh(geo, mat);
+    m.castShadow = true;
+    m.position.set(px, py, pz);
+    return m;
   };
-  add(new THREE.CylinderGeometry(.10,.09,.56,8), bm, -.15,.28,0);
-  add(new THREE.CylinderGeometry(.10,.09,.56,8), bm,  .15,.28,0);
-  add(new THREE.BoxGeometry(.43,.52,.23),         bm,  0, .80,0);
-  add(new THREE.BoxGeometry(.45,.07,.25),         am,  0, .56,0);
-  add(new THREE.CylinderGeometry(.07,.065,.45,7), bm, -.28,.77,0, 0,0, .16);
-  add(new THREE.CylinderGeometry(.07,.065,.45,7), bm,  .28,.77,0, 0,0,-.16);
-  add(new THREE.SphereGeometry(.09,7,5),          sm, -.31,.54,0);
-  add(new THREE.SphereGeometry(.09,7,5),          sm,  .31,.54,0);
-  add(new THREE.SphereGeometry(.19,10,8),         sm,  0, 1.18,0);
-  const hb=new THREE.Mesh(new THREE.TorusGeometry(.19,.026,6,16),am);
-  hb.position.set(0,1.18,0); hb.rotation.x=Math.PI/2; g.add(hb);
-  return g;
+
+  // --- Torso group (pivot at hips) ---
+  const torsoGrp = new THREE.Group();
+  torsoGrp.position.set(0, 0.54, 0);
+  root.add(torsoGrp);
+
+  // Hips / belt
+  const hips = add(new THREE.BoxGeometry(.38,.20,.20), aMat, 0, 0, 0);
+  torsoGrp.add(hips);
+
+  // Abdomen
+  const abdomen = add(new THREE.BoxGeometry(.34,.22,.18), bMat, 0, 0.21, 0);
+  torsoGrp.add(abdomen);
+
+  // Chest
+  const chestGrp = new THREE.Group();
+  chestGrp.position.set(0, 0.38, 0);
+  torsoGrp.add(chestGrp);
+
+  const chest = add(new THREE.BoxGeometry(.42,.26,.22), bMat, 0, 0, 0);
+  chestGrp.add(chest);
+
+  // Chest accent stripe
+  const stripe = add(new THREE.BoxGeometry(.10,.22,.23), aMat, 0, 0, 0);
+  chestGrp.add(stripe);
+
+  // Head group (pivot at neck)
+  const headGrp = new THREE.Group();
+  headGrp.position.set(0, 0.17, 0);
+  chestGrp.add(headGrp);
+
+  const head = add(new THREE.BoxGeometry(.24,.26,.22), skinMat, 0, 0.15, 0);
+  headGrp.add(head);
+
+  // Eyes
+  const eyeL = add(new THREE.SphereGeometry(.04,6,4), darkMat, -0.07, 0.17, 0.11);
+  const eyeR = add(new THREE.SphereGeometry(.04,6,4), darkMat,  0.07, 0.17, 0.11);
+  headGrp.add(eyeL); headGrp.add(eyeR);
+
+  // Style-specific head accessory
+  if(style === 'karateka') {
+    // Headband
+    const band = add(new THREE.TorusGeometry(.13,.018,5,14), aMat, 0, 0.14, 0);
+    band.rotation.x = Math.PI/2;
+    headGrp.add(band);
+  } else if(style === 'torero') {
+    // Montera hat (flat top)
+    const hat = add(new THREE.CylinderGeometry(.14,.15,.06,8), aMat, 0, 0.30, 0);
+    const brim = add(new THREE.CylinderGeometry(.22,.22,.03,8), aMat, 0, 0.26, 0);
+    headGrp.add(hat); headGrp.add(brim);
+  } else if(style === 'ninja') {
+    // Ninja mask
+    const mask = add(new THREE.BoxGeometry(.26,.14,.24), darkMat, 0, 0.14, 0);
+    headGrp.add(mask);
+    // Head wrap
+    const wrap = add(new THREE.SphereGeometry(.145,8,6), darkMat, 0, 0.21, 0);
+    headGrp.add(wrap);
+  } else if(style === 'samurai') {
+    // Kabuto helmet
+    const helm = add(new THREE.SphereGeometry(.16,8,6,0,Math.PI*2,0,Math.PI/2), aMat, 0, 0.20, 0);
+    const crest = add(new THREE.BoxGeometry(.05,.18,.06), aMat, 0, 0.38, 0);
+    headGrp.add(helm); headGrp.add(crest);
+  }
+
+  // --- LEFT ARM ---
+  const lShoulderGrp = new THREE.Group();
+  lShoulderGrp.position.set(-0.25, 0.10, 0);
+  chestGrp.add(lShoulderGrp);
+
+  const lUpperArm = add(new THREE.CylinderGeometry(.065,.055,.30,7), bMat, 0, -0.14, 0);
+  lShoulderGrp.add(lUpperArm);
+
+  const lElbowGrp = new THREE.Group();
+  lElbowGrp.position.set(0, -0.29, 0);
+  lShoulderGrp.add(lElbowGrp);
+
+  const lForearm = add(new THREE.CylinderGeometry(.055,.045,.28,7), bMat, 0, -0.13, 0);
+  lElbowGrp.add(lForearm);
+
+  const lHand = add(new THREE.BoxGeometry(.10,.10,.08), skinMat, 0, -0.28, 0);
+  lElbowGrp.add(lHand);
+
+  // --- RIGHT ARM ---
+  const rShoulderGrp = new THREE.Group();
+  rShoulderGrp.position.set(0.25, 0.10, 0);
+  chestGrp.add(rShoulderGrp);
+
+  const rUpperArm = add(new THREE.CylinderGeometry(.065,.055,.30,7), bMat, 0, -0.14, 0);
+  rShoulderGrp.add(rUpperArm);
+
+  const rElbowGrp = new THREE.Group();
+  rElbowGrp.position.set(0, -0.29, 0);
+  rShoulderGrp.add(rElbowGrp);
+
+  const rForearm = add(new THREE.CylinderGeometry(.055,.045,.28,7), bMat, 0, -0.13, 0);
+  rElbowGrp.add(rForearm);
+
+  const rHand = add(new THREE.BoxGeometry(.10,.10,.08), skinMat, 0, -0.28, 0);
+  rElbowGrp.add(rHand);
+
+  // --- LEFT LEG ---
+  const lHipGrp = new THREE.Group();
+  lHipGrp.position.set(-0.13, -0.10, 0);
+  torsoGrp.add(lHipGrp);
+
+  const lThigh = add(new THREE.CylinderGeometry(.085,.07,.36,7), bMat, 0, -0.17, 0);
+  lHipGrp.add(lThigh);
+
+  const lKneeGrp = new THREE.Group();
+  lKneeGrp.position.set(0, -0.35, 0);
+  lHipGrp.add(lKneeGrp);
+
+  const lShin = add(new THREE.CylinderGeometry(.07,.055,.34,7), bMat, 0, -0.16, 0);
+  lKneeGrp.add(lShin);
+
+  const lAnkleGrp = new THREE.Group();
+  lAnkleGrp.position.set(0, -0.33, 0);
+  lKneeGrp.add(lAnkleGrp);
+
+  const lFoot = add(new THREE.BoxGeometry(.11,.08,.22), aMat, 0, -0.04, 0.04);
+  lAnkleGrp.add(lFoot);
+
+  // --- RIGHT LEG ---
+  const rHipGrp = new THREE.Group();
+  rHipGrp.position.set(0.13, -0.10, 0);
+  torsoGrp.add(rHipGrp);
+
+  const rThigh = add(new THREE.CylinderGeometry(.085,.07,.36,7), bMat, 0, -0.17, 0);
+  rHipGrp.add(rThigh);
+
+  const rKneeGrp = new THREE.Group();
+  rKneeGrp.position.set(0, -0.35, 0);
+  rHipGrp.add(rKneeGrp);
+
+  const rShin = add(new THREE.CylinderGeometry(.07,.055,.34,7), bMat, 0, -0.16, 0);
+  rKneeGrp.add(rShin);
+
+  const rAnkleGrp = new THREE.Group();
+  rAnkleGrp.position.set(0, -0.33, 0);
+  rKneeGrp.add(rAnkleGrp);
+
+  const rFoot = add(new THREE.BoxGeometry(.11,.08,.22), aMat, 0, -0.04, 0.04);
+  rAnkleGrp.add(rFoot);
+
+  // Shadow
+  const shadow = new THREE.Mesh(
+    new THREE.CircleGeometry(.42,12),
+    new THREE.MeshBasicMaterial({color:0x000000,transparent:true,opacity:.4,depthWrite:false})
+  );
+  shadow.rotation.x = -Math.PI/2;
+  shadow.position.y = 0.003;
+  scene.add(shadow);
+
+  // Emissive setup
+  root.traverse(c=>{
+    if(!c.isMesh) return;
+    const ms = Array.isArray(c.material)?c.material:[c.material];
+    ms.forEach(m=>{ if(m&&!m.emissive) m.emissive = new THREE.Color(0); });
+  });
+
+  scene.add(root);
+
+  return {
+    root, shadow,
+    torsoGrp, chestGrp, headGrp,
+    lShoulderGrp, lElbowGrp, lHand,
+    rShoulderGrp, rElbowGrp, rHand,
+    lHipGrp, lKneeGrp, lAnkleGrp,
+    rHipGrp, rKneeGrp, rAnkleGrp,
+    lFoot, rFoot,
+  };
+}
+
+// ═══════════════════════════════════════════════════════
+//  PROCEDURAL ANIMATION POSES
+// ═══════════════════════════════════════════════════════
+// Returns target rotations (radians) for each joint
+// All groups: {torso, chest, head, lShoulder, lElbow, rShoulder, rElbow,
+//              lHip, lKnee, rHip, rKnee}
+// Rotations are THREE.Euler applied to group
+
+const POSES = {
+  idle: (t) => ({
+    torso:     { x: 0.05,           y: 0,    z: 0 },
+    chest:     { x: Math.sin(t*1.4)*0.015, y: 0, z: 0 },
+    head:      { x: 0,              y: 0,    z: Math.sin(t*1.4)*0.02 },
+    lShoulder: { x: 0.1,            y: 0,    z: 0.15 },
+    lElbow:    { x: -0.3,           y: 0,    z: 0 },
+    rShoulder: { x: 0.1,            y: 0,    z: -0.15 },
+    rElbow:    { x: -0.3,           y: 0,    z: 0 },
+    lHip:      { x: 0.05,           y: 0,    z: 0 },
+    lKnee:     { x: -0.05,          y: 0,    z: 0 },
+    rHip:      { x: 0.05,           y: 0,    z: 0 },
+    rKnee:     { x: -0.05,          y: 0,    z: 0 },
+    torsoY:    Math.sin(t*1.4)*0.012 + 0.54,
+  }),
+
+  walk: (t) => {
+    const s = Math.sin(t*8);
+    const c = Math.cos(t*8);
+    return {
+      torso:     { x: 0.04, y: s*0.06, z: 0 },
+      chest:     { x: 0.02, y: -s*0.04, z: 0 },
+      head:      { x: 0, y: 0, z: 0 },
+      lShoulder: { x: c*0.45, y: 0, z: 0.1 },
+      lElbow:    { x: Math.max(-0.8, c*0.3 - 0.2), y: 0, z: 0 },
+      rShoulder: { x: -c*0.45, y: 0, z: -0.1 },
+      rElbow:    { x: Math.max(-0.8, -c*0.3 - 0.2), y: 0, z: 0 },
+      lHip:      { x: -c*0.55, y: 0, z: 0 },
+      lKnee:     { x: Math.min(0, c*0.7 - 0.2), y: 0, z: 0 },
+      rHip:      { x: c*0.55, y: 0, z: 0 },
+      rKnee:     { x: Math.min(0, -c*0.7 - 0.2), y: 0, z: 0 },
+      torsoY:    0.54 + Math.abs(s)*0.04,
+    };
+  },
+
+  crouch: (t) => ({
+    torso:     { x: 0.25, y: 0, z: 0 },
+    chest:     { x: 0.1,  y: 0, z: 0 },
+    head:      { x: -0.1, y: 0, z: 0 },
+    lShoulder: { x: 0.4,  y: 0, z: 0.3 },
+    lElbow:    { x: -0.7, y: 0, z: 0 },
+    rShoulder: { x: 0.4,  y: 0, z: -0.3 },
+    rElbow:    { x: -0.7, y: 0, z: 0 },
+    lHip:      { x: 0.85, y: 0, z: 0 },
+    lKnee:     { x: -1.1, y: 0, z: 0 },
+    rHip:      { x: 0.85, y: 0, z: 0 },
+    rKnee:     { x: -1.1, y: 0, z: 0 },
+    torsoY:    0.30,
+  }),
+
+  block: (t) => ({
+    torso:     { x: 0.15, y: 0, z: 0 },
+    chest:     { x: 0.1,  y: 0, z: 0 },
+    head:      { x: -0.15, y: 0, z: 0 },
+    lShoulder: { x: -1.1, y: 0, z: 0.25 },
+    lElbow:    { x: -1.2, y: 0, z: 0 },
+    rShoulder: { x: -1.1, y: 0, z: -0.25 },
+    rElbow:    { x: -1.2, y: 0, z: 0 },
+    lHip:      { x: 0.2,  y: 0, z: 0 },
+    lKnee:     { x: -0.2, y: 0, z: 0 },
+    rHip:      { x: 0.2,  y: 0, z: 0 },
+    rKnee:     { x: -0.2, y: 0, z: 0 },
+    torsoY:    0.50,
+  }),
+
+  punch_light: (t) => ({
+    torso:     { x: 0.08, y: 0.2,  z: 0 },
+    chest:     { x: 0.05, y: 0.15, z: 0 },
+    head:      { x: 0,    y: 0.1,  z: 0 },
+    lShoulder: { x: 0.3,  y: 0,    z: 0.15 },
+    lElbow:    { x: -0.4, y: 0,    z: 0 },
+    rShoulder: { x: -1.4, y: 0.2,  z: -0.2 },
+    rElbow:    { x: -0.6, y: 0,    z: 0 },
+    lHip:      { x: 0.1,  y: 0,    z: 0 },
+    lKnee:     { x: -0.1, y: 0,    z: 0 },
+    rHip:      { x: 0.05, y: 0,    z: 0 },
+    rKnee:     { x: -0.05, y: 0,   z: 0 },
+    torsoY:    0.54,
+  }),
+
+  punch_medium: (t) => ({
+    torso:     { x: 0.1,  y: 0.35, z: 0 },
+    chest:     { x: 0.05, y: 0.2,  z: 0 },
+    head:      { x: 0,    y: 0.2,  z: 0 },
+    lShoulder: { x: 0.5,  y: 0,    z: 0.2 },
+    lElbow:    { x: -0.5, y: 0,    z: 0 },
+    rShoulder: { x: -1.6, y: 0.3,  z: -0.25 },
+    rElbow:    { x: -0.4, y: 0,    z: 0 },
+    lHip:      { x: 0.15, y: 0,    z: 0 },
+    lKnee:     { x: -0.1, y: 0,    z: 0 },
+    rHip:      { x: -0.05, y: 0,   z: 0 },
+    rKnee:     { x: -0.05, y: 0,   z: 0 },
+    torsoY:    0.54,
+  }),
+
+  punch_heavy: (t) => ({
+    torso:     { x: 0.12, y: 0.5,  z: 0.1 },
+    chest:     { x: 0.08, y: 0.3,  z: 0.05 },
+    head:      { x: 0,    y: 0.3,  z: 0 },
+    lShoulder: { x: 0.8,  y: 0,    z: 0.3 },
+    lElbow:    { x: -0.6, y: 0,    z: 0 },
+    rShoulder: { x: -1.8, y: 0.4,  z: -0.35 },
+    rElbow:    { x: -0.2, y: 0,    z: 0 },
+    lHip:      { x: 0.2,  y: 0,    z: 0 },
+    lKnee:     { x: -0.15, y: 0,   z: 0 },
+    rHip:      { x: -0.1, y: 0,    z: 0 },
+    rKnee:     { x: -0.05, y: 0,   z: 0 },
+    torsoY:    0.54,
+  }),
+
+  kick_light: (t) => ({
+    torso:     { x: 0.1,  y: -0.1, z: 0 },
+    chest:     { x: 0.05, y: 0,    z: 0 },
+    head:      { x: 0,    y: 0,    z: 0 },
+    lShoulder: { x: -0.3, y: 0,    z: 0.4 },
+    lElbow:    { x: -0.5, y: 0,    z: 0 },
+    rShoulder: { x: -0.3, y: 0,    z: -0.4 },
+    rElbow:    { x: -0.5, y: 0,    z: 0 },
+    lHip:      { x: -0.9, y: 0,    z: 0 },
+    lKnee:     { x: 0.8,  y: 0,    z: 0 },  // kick leg front
+    rHip:      { x: 0.15, y: 0,    z: 0 },
+    rKnee:     { x: -0.1, y: 0,    z: 0 },
+    torsoY:    0.56,
+  }),
+
+  kick_medium: (t) => ({
+    torso:     { x: -0.05, y: -0.15, z: 0 },
+    chest:     { x: -0.03, y: 0,     z: 0 },
+    head:      { x: 0,     y: 0,     z: 0 },
+    lShoulder: { x: -0.5,  y: 0,     z: 0.45 },
+    lElbow:    { x: -0.6,  y: 0,     z: 0 },
+    rShoulder: { x: -0.4,  y: 0,     z: -0.4 },
+    rElbow:    { x: -0.5,  y: 0,     z: 0 },
+    lHip:      { x: -1.3,  y: 0,     z: 0 },
+    lKnee:     { x: 0.7,   y: 0,     z: 0 },
+    rHip:      { x: 0.2,   y: 0,     z: 0 },
+    rKnee:     { x: -0.1,  y: 0,     z: 0 },
+    torsoY:    0.58,
+  }),
+
+  kick_heavy: (t) => ({
+    torso:     { x: -0.15, y: -0.2,  z: 0.1 },
+    chest:     { x: -0.08, y: 0,     z: 0.05 },
+    head:      { x: 0.1,   y: 0,     z: 0 },
+    lShoulder: { x: -0.7,  y: 0,     z: 0.5 },
+    lElbow:    { x: -0.6,  y: 0,     z: 0 },
+    rShoulder: { x: -0.5,  y: 0,     z: -0.45 },
+    rElbow:    { x: -0.5,  y: 0,     z: 0 },
+    lHip:      { x: -1.7,  y: 0,     z: 0 },
+    lKnee:     { x: 0.5,   y: 0,     z: 0 },  // High kick
+    rHip:      { x: 0.25,  y: 0,     z: 0 },
+    rKnee:     { x: -0.1,  y: 0,     z: 0 },
+    torsoY:    0.60,
+  }),
+
+  hit: (t) => ({
+    torso:     { x: -0.25, y: 0.15, z: 0 },
+    chest:     { x: -0.15, y: 0.1,  z: 0 },
+    head:      { x: -0.2,  y: 0.1,  z: 0.15 },
+    lShoulder: { x: 0.6,   y: 0,    z: 0.5 },
+    lElbow:    { x: -0.4,  y: 0,    z: 0 },
+    rShoulder: { x: 0.6,   y: 0,    z: -0.5 },
+    rElbow:    { x: -0.4,  y: 0,    z: 0 },
+    lHip:      { x: -0.1,  y: 0,    z: 0 },
+    lKnee:     { x: 0.1,   y: 0,    z: 0 },
+    rHip:      { x: -0.1,  y: 0,    z: 0 },
+    rKnee:     { x: 0.1,   y: 0,    z: 0 },
+    torsoY:    0.54,
+  }),
+
+  ko: (t) => {
+    const fall = Math.min(t * 1.2, 1);
+    return {
+      torso:     { x: -fall * 1.4, y: 0, z: 0 },
+      chest:     { x: -fall * 0.4, y: 0, z: 0 },
+      head:      { x: -fall * 0.6, y: 0, z: fall * 0.3 },
+      lShoulder: { x: fall * 0.8,  y: 0, z: 0.4 + fall*0.3 },
+      lElbow:    { x: fall * 0.4,  y: 0, z: 0 },
+      rShoulder: { x: fall * 0.8,  y: 0, z: -0.4 - fall*0.3 },
+      rElbow:    { x: fall * 0.4,  y: 0, z: 0 },
+      lHip:      { x: fall * 1.0,  y: 0, z: 0 },
+      lKnee:     { x: -fall * 0.5, y: 0, z: 0 },
+      rHip:      { x: fall * 1.2,  y: 0, z: 0 },
+      rKnee:     { x: -fall * 0.6, y: 0, z: 0 },
+      torsoY:    0.54 - fall * 0.42,
+    };
+  },
+
+  win: (t) => {
+    const s = Math.sin(t * 4);
+    return {
+      torso:     { x: -0.1,   y: s*0.08,  z: 0 },
+      chest:     { x: -0.08,  y: 0,       z: 0 },
+      head:      { x: -0.05,  y: s*0.05,  z: 0 },
+      lShoulder: { x: -1.6,   y: 0,       z: 0.3 + s*0.1 },
+      lElbow:    { x: -1.0,   y: 0,       z: 0 },
+      rShoulder: { x: -1.6,   y: 0,       z: -0.3 - s*0.1 },
+      rElbow:    { x: -1.0,   y: 0,       z: 0 },
+      lHip:      { x: 0.1,    y: 0,       z: 0 },
+      lKnee:     { x: -0.1,   y: 0,       z: 0 },
+      rHip:      { x: 0.1,    y: 0,       z: 0 },
+      rKnee:     { x: -0.1,   y: 0,       z: 0 },
+      torsoY:    0.54 + s * 0.04,
+    };
+  },
+
+  jump: (t, vy) => {
+    const rise = Math.max(0, vy / JUMP_VY);
+    const fall = Math.max(0, -vy / JUMP_VY);
+    const walkS = Math.sin(t * 10);
+    return {
+      torso:     { x: -rise*0.15 + fall*0.1, y: walkS*0.05, z: 0 },
+      chest:     { x: -rise*0.1,  y: 0,      z: 0 },
+      head:      { x: -rise*0.05, y: 0,       z: 0 },
+      lShoulder: { x: -0.5 + walkS*0.3, y: 0, z: 0.3 },
+      lElbow:    { x: -0.7, y: 0, z: 0 },
+      rShoulder: { x: -0.5 - walkS*0.3, y: 0, z: -0.3 },
+      rElbow:    { x: -0.7, y: 0, z: 0 },
+      lHip:      { x: walkS*0.4 - 0.3, y: 0, z: 0 },
+      lKnee:     { x: Math.min(0, -walkS*0.4 - 0.4), y: 0, z: 0 },
+      rHip:      { x: -walkS*0.4 - 0.3, y: 0, z: 0 },
+      rKnee:     { x: Math.min(0, walkS*0.4 - 0.4), y: 0, z: 0 },
+      torsoY:    0.54,
+    };
+  },
+
+  special: (t) => {
+    const s = Math.sin(t * 12);
+    return {
+      torso:     { x: -0.2,   y: 0,      z: s*0.15 },
+      chest:     { x: -0.15,  y: 0,      z: 0 },
+      head:      { x: -0.1,   y: 0,      z: 0 },
+      lShoulder: { x: -2.0,   y: 0,      z: 0.5 + s*0.2 },
+      lElbow:    { x: -0.8,   y: 0,      z: 0 },
+      rShoulder: { x: -2.0,   y: 0,      z: -0.5 - s*0.2 },
+      rElbow:    { x: -0.8,   y: 0,      z: 0 },
+      lHip:      { x: -0.3,   y: 0,      z: 0 },
+      lKnee:     { x: 0.2,    y: 0,      z: 0 },
+      rHip:      { x: -0.3,   y: 0,      z: 0 },
+      rKnee:     { x: 0.2,    y: 0,      z: 0 },
+      torsoY:    0.58,
+    };
+  },
+};
+
+// Smoothly interpolate between two pose states
+function lerpPose(rig, target, alpha) {
+  const lerp = (a, b, t) => a + (b - a) * t;
+  const lerpRot = (grp, tgt) => {
+    if(!tgt) return;
+    grp.rotation.x = lerp(grp.rotation.x, tgt.x ?? 0, alpha);
+    grp.rotation.y = lerp(grp.rotation.y, tgt.y ?? 0, alpha);
+    grp.rotation.z = lerp(grp.rotation.z, tgt.z ?? 0, alpha);
+  };
+  lerpRot(rig.torsoGrp,    target.torso);
+  lerpRot(rig.chestGrp,    target.chest);
+  lerpRot(rig.headGrp,     target.head);
+  lerpRot(rig.lShoulderGrp, target.lShoulder);
+  lerpRot(rig.lElbowGrp,   target.lElbow);
+  lerpRot(rig.rShoulderGrp, target.rShoulder);
+  lerpRot(rig.rElbowGrp,   target.rElbow);
+  lerpRot(rig.lHipGrp,     target.lHip);
+  lerpRot(rig.lKneeGrp,    target.lKnee);
+  lerpRot(rig.rHipGrp,     target.rHip);
+  lerpRot(rig.rKneeGrp,    target.rKnee);
+
+  if(target.torsoY !== undefined)
+    rig.torsoGrp.position.y = lerp(rig.torsoGrp.position.y, target.torsoY, alpha * 0.7);
 }
 
 // ═══════════════════════════════════════════════════════
@@ -414,18 +911,26 @@ function makePlaceholder(bodyHex, accentHex) {
 const keys = {};
 document.addEventListener('keydown', e=>{
   const k = e.key.length===1?e.key.toLowerCase():e.key;
-  keys[k] = true;
-  if (gamePhase!=='fight') return;
-  const atk = (fighter, ctrl)=>{
-    if (k===ctrl.punch_light)  fighter.startAttack('punch_light');
-    if (k===ctrl.punch_medium) fighter.startAttack('punch_medium');
-    if (k===ctrl.punch_heavy)  fighter.startAttack('punch_heavy');
-    if (k===ctrl.kick_light)   fighter.startAttack('kick_light');
-    if (k===ctrl.kick_medium)  fighter.startAttack('kick_medium');
-    if (k===ctrl.kick_heavy)   fighter.startAttack('kick_heavy');
-  };
-  if (p1) atk(p1, p1ctrl);
-  if (p2) atk(p2, p2ctrl);
+  if (!keys[k]) {
+    keys[k] = true;
+    if (gamePhase==='fight') {
+      const atk = (fighter, ctrl) => {
+        if(k===ctrl.punch_light)  fighter.startAttack('punch_light');
+        if(k===ctrl.punch_medium) fighter.startAttack('punch_medium');
+        if(k===ctrl.punch_heavy)  fighter.startAttack('punch_heavy');
+        if(k===ctrl.kick_light)   fighter.startAttack('kick_light');
+        if(k===ctrl.kick_medium)  fighter.startAttack('kick_medium');
+        if(k===ctrl.kick_heavy)   fighter.startAttack('kick_heavy');
+        // Special: punch_light + kick_light held together
+        if((k===ctrl.punch_light && keys[ctrl.kick_light]) ||
+           (k===ctrl.kick_light  && keys[ctrl.punch_light])) {
+          fighter.startAttack('special');
+        }
+      };
+      if(p1) atk(p1, p1ctrl);
+      if(p2) atk(p2, p2ctrl);
+    }
+  }
 });
 document.addEventListener('keyup', e=>{
   keys[e.key.length===1?e.key.toLowerCase():e.key] = false;
@@ -443,26 +948,30 @@ const p2ctrl = {
 };
 
 // ═══════════════════════════════════════════════════════
-//  SPARKS  (2-D overlay)
+//  SPARKS & EFFECTS
 // ═══════════════════════════════════════════════════════
 const sc = document.getElementById('sparks');
 sc.width=960; sc.height=440;
 const sx = sc.getContext('2d');
 const ptcls = [];
 
-function spawnSpark(wx,wy) {
-  const v=new THREE.Vector3(wx,wy,0).project(camera);
+function spawnSpark(wx,wy, isSpecial=false) {
+  const v = new THREE.Vector3(wx,wy,0).project(camera);
   const px=(v.x+1)/2*960, py=(-v.y+1)/2*440;
-  for(let i=0;i<15;i++){
-    const a=Math.random()*Math.PI*2, sp=2+Math.random()*6;
+  const count = isSpecial ? 35 : 15;
+  for(let i=0;i<count;i++){
+    const a=Math.random()*Math.PI*2, sp=(isSpecial?3:2)+Math.random()*(isSpecial?10:6);
     ptcls.push({
       x:px,y:py, vx:Math.cos(a)*sp, vy:Math.sin(a)*sp,
-      life:1, decay:.04+Math.random()*.04,
-      r:2+Math.random()*4,
-      col:Math.random()>.5?'#ffd700':'#ff5500',
+      life:1, decay:.03+Math.random()*.04,
+      r:(isSpecial?3:2)+Math.random()*4,
+      col: isSpecial
+        ? ['#ff00cc','#9900ff','#00eeff','#ffffff'][Math.floor(Math.random()*4)]
+        : (Math.random()>.5?'#ffd700':'#ff5500'),
     });
   }
 }
+
 function tickSparks(){
   sx.clearRect(0,0,960,440);
   for(let i=ptcls.length-1;i>=0;i--){
@@ -475,23 +984,53 @@ function tickSparks(){
   sx.globalAlpha=1;
 }
 
+// Damage number popup
+function spawnDmgText(fighter, dmg, isSpecial=false) {
+  const el = document.createElement('div');
+  el.className = 'dmg-pop';
+  el.textContent = isSpecial ? `★${dmg}!` : dmg;
+  el.style.fontSize = isSpecial ? '42px' : (dmg >= 18 ? '34px' : '22px');
+  el.style.color = isSpecial ? '#ff00cc' : (dmg >= 18 ? '#ff3300' : '#ffcc00');
+  el.style.textShadow = isSpecial ? '0 0 20px #9900ff' : '2px 2px 0 #000';
+  // Position near the hit fighter's screen location
+  const v = new THREE.Vector3(fighter.px, 1.5, 0).project(camera);
+  const sx2 = (v.x+1)/2*960;
+  const sy2 = (-v.y+1)/2*440;
+  el.style.left = (sx2 + (Math.random()*40-20)) + 'px';
+  el.style.top  = (52 + sy2 - 20) + 'px';
+  document.getElementById('gameWrap').appendChild(el);
+  setTimeout(()=>el.remove(), 900);
+}
+
+// Super flash overlay
+function triggerSuperFlash() {
+  const el = document.getElementById('superFlash');
+  el.classList.add('active');
+  setTimeout(()=>el.classList.remove('active'), 120);
+}
+
 // ═══════════════════════════════════════════════════════
 //  FIGHTER CLASS
 // ═══════════════════════════════════════════════════════
 class Fighter {
-  constructor(startX, facing, ctrl, bodyHex, accentHex, label) {
+  constructor(startX, facing, ctrl, bodyHex, accentHex, label, style, hpMod=1, speedMod=1) {
     this.label   = label;
+    this.style   = style;
     this.px      = startX;
     this.py      = 0;
     this.vy      = 0;
-    this.facing  = facing;   // 1=right, -1=left
-    this.hp      = 100;
-    this.maxHp   = 100;
+    this.facing  = facing;
+    this.hp      = Math.round(100 * hpMod);
+    this.maxHp   = Math.round(100 * hpMod);
+    this.special = 0;
+    this.maxSpecial = 100;
+    this.speedMod = speedMod;
     this.ctrl    = ctrl;
 
     this.state      = 'idle';
     this.stateFrame = 0;
     this.onGround   = true;
+    this.animTime   = Math.random() * 10; // offset idle phase
 
     this.currentMove = null;
     this.attackFrame = 0;
@@ -500,20 +1039,19 @@ class Fighter {
     this.hitFlash    = 0;
     this.comboCount  = 0;
     this.lastHitTime = 0;
-    this.jumpWalkT   = 0;   // manual walk-scrub time during jump
+    this.koTime      = 0;
 
-    // mesh & shadow
-    this.mesh  = makePlaceholder(bodyHex, accentHex);
-    this.shadow = new THREE.Mesh(
-      new THREE.CircleGeometry(.38,12),
-      new THREE.MeshBasicMaterial({color:0x000000,transparent:true,opacity:.4,depthWrite:false})
-    );
-    this.shadow.rotation.x = -Math.PI/2;
-    scene.add(this.mesh);
-    scene.add(this.shadow);
+    // Build procedural rig
+    this.rig = makeFighterRig(bodyHex, accentHex, style);
+    this.mesh = this.rig.root;  // alias for position
+    this.shadow = this.rig.shadow;
 
-    // animation state
-    this.mixer   = null;
+    // GLB override
+    this.glbMesh  = null;
+    this.glbPivot = null;
+    this.glbFeetY = 0;
+    this.bones    = {};
+    this.mixer    = null;
     this.clips   = {};
     this.actions = {};
     this.curAnim = null;
@@ -522,267 +1060,320 @@ class Fighter {
     this._applyTransform();
   }
 
-  // Apply preloaded GLTF ──────────────────────────────
   applyGLTF(gltf) {
-    scene.remove(this.mesh);
+    scene.remove(this.rig.root);
 
-    // Clone so P1 and P2 are independent even when same character
+    // In Three.js r128 the root object of a cloned GLTF scene has read-only
+    // position/rotation/scale.  The only safe fix is to wrap it inside a plain
+    // Group and apply ALL transforms to the wrapper, never to the model itself.
+    const pivot = new THREE.Group();
     const model = gltf.scene.clone(true);
+    pivot.add(model);          // model stays at its default offset (0,0,0)
 
-    // Meshy models come in at ~100x scale and rotated — normalise
-    // Find bounding box to auto-scale to ~1.8 units tall
-    const box = new THREE.Box3().setFromObject(model);
+    // Measure unscaled bounding box to find height and feet offset
+    const box = new THREE.Box3().setFromObject(pivot);
     const size = new THREE.Vector3();
     box.getSize(size);
-    const targetH = 1.8;
-    const scaleFactor = targetH / Math.max(size.y, 0.01);
-    model.scale.setScalar(scaleFactor);
+    const sf = 1.8 / Math.max(size.y, 0.01);
 
-    // Re-check bottom after scale and shift so feet are at y=0
-    const box2 = new THREE.Box3().setFromObject(model);
-    model.position.y = -box2.min.y;
+    // Apply scale + feet-lift entirely on the pivot (which IS writable)
+    pivot.scale.setScalar(sf);
+    const box2 = new THREE.Box3().setFromObject(pivot);
+    // Store the feet-lift so _applyTransform can add jump height on top
+    this.glbFeetY = -box2.min.y;
+    pivot.position.y = this.glbFeetY;
 
     model.traverse(c => {
       if (!c.isMesh) return;
       c.castShadow = c.receiveShadow = true;
       const ms = Array.isArray(c.material)?c.material:[c.material];
-      ms.forEach(m=>{ if(m && !m.emissive) m.emissive=new THREE.Color(0); });
+      ms.forEach(m=>{ if(m && !m.emissive) m.emissive = new THREE.Color(0); });
     });
 
-    this.mesh    = model;
-    this.mixer   = new THREE.AnimationMixer(model);
-    this.clips   = {};
-    this.actions = {};
-    this.curAnim = null;
+    // pivot is what we move around the world; model is the actual mesh
+    this.glbPivot = pivot;
+    this.glbMesh  = model;
+    this.mesh     = pivot;
 
-    gltf.animations.forEach(clip=>{
+    // AnimationMixer drives clips on the actual model node
+    this.mixer = new THREE.AnimationMixer(model);
+    this.clips = {}; this.actions = {}; this.curAnim = null;
+    const animSrc = (gltf.animations && gltf.animations.length>0)
+      ? gltf.animations : (gltf._sharedAnims || []);
+    animSrc.forEach(clip=>{
       const cl = clip.clone();
-      this.clips[cl.name]   = cl;
+      this.clips[cl.name] = cl;
       this.actions[cl.name] = this.mixer.clipAction(cl);
     });
 
-    console.log(`[${this.label}] anims:`, Object.keys(this.clips));
-    scene.add(this.mesh);
+    // Map bones using exact names from the GLB
+    this.bones = {};
+    model.traverse(node=>{
+      for(const [key, candidates] of Object.entries(BONE_MAP)){
+        if(this.bones[key]) continue;
+        if(candidates.includes(node.name)) this.bones[key] = node;
+      }
+    });
+    console.log(`[${this.label}] GLB bones:`, Object.keys(this.bones));
+    console.log(`[${this.label}] GLB anims:`, Object.keys(this.clips));
+
+    scene.add(pivot);
     this.ready = true;
     this._applyTransform();
     this.playAnim(ANIM.idle);
   }
 
-  // ── Fuzzy clip name resolver ──────────────────────────
   _resolve(name) {
     if (this.clips[name]) return name;
     const lo = name.toLowerCase();
     return Object.keys(this.clips).find(k=>
-      k.toLowerCase()===lo ||
-      k.toLowerCase().includes(lo) ||
-      lo.includes(k.toLowerCase())
+      k.toLowerCase()===lo || k.toLowerCase().includes(lo) || lo.includes(k.toLowerCase())
     ) ?? null;
   }
 
-  // ── Play animation ────────────────────────────────────
   playAnim(name, loop=true, fade=0.12) {
     if (!this.mixer) return;
     const key = this._resolve(name);
     if (!key || key===this.curAnim) return;
     this.curAnim = key;
-
-    Object.entries(this.actions).forEach(([k,a])=>{
-      if (k!==key && a.isRunning()) a.fadeOut(fade);
-    });
+    Object.entries(this.actions).forEach(([k,a])=>{ if(k!==key&&a.isRunning())a.fadeOut(fade); });
     const a = this.actions[key];
     a.setLoop(loop?THREE.LoopRepeat:THREE.LoopOnce, Infinity);
     a.clampWhenFinished = !loop;
-    a.enabled = true;
-    a.reset().fadeIn(fade).play();
+    a.enabled=true; a.reset().fadeIn(fade).play();
   }
 
-  // ── Scrub walk clip manually (jump trick) ────────────
-  _scrubWalk(t) {
-    const key = this._resolve(ANIM.walk);
-    if (!key) return;
-    const a=this.actions[key], c=this.clips[key];
-    if (!a||!c) return;
-    if (!a.isRunning()) { a.setLoop(THREE.LoopRepeat,Infinity); a.play(); }
-    a.paused = true;
-    a.time   = t % c.duration;
-    this.mixer.update(0); // flush skeleton pose
+  getPose(dt) {
+    this.animTime += dt;
+    const t = this.animTime;
+
+    if (this.state === 'ko') return POSES.ko(this.koTime);
+    if (this.state === 'win') return POSES.win(t);
+    if (this.state === 'jump') return POSES.jump(t, this.vy);
+    if (this.state === 'crouch') return POSES.crouch(t);
+    if (this.state === 'block') return POSES.block(t);
+    if (this.state === 'hit') return POSES.hit(t);
+    if (this.state === 'attack') {
+      if (this.currentMove) {
+        const poseKey = POSES[this.currentMove];
+        if (poseKey) return poseKey(t);
+      }
+      return POSES.idle(t);
+    }
+    if (this.state === 'walk') return POSES.walk(t);
+    return POSES.idle(t);
   }
 
-  // ── State change ──────────────────────────────────────
   setState(s) { if(this.state!=='ko'){ this.state=s; this.stateFrame=0; } }
 
-  // ── Begin an attack ───────────────────────────────────
   startAttack(move) {
-    if (this.state==='ko'||this.state==='attack'||this.stunFrames>0) return;
+    if (this.state==='ko' || this.state==='attack' || this.stunFrames>0) return;
+    if (move==='special' && this.special < this.maxSpecial) return;
     this.currentMove = move;
     this.attackFrame = 0;
     this.hitLanded   = false;
     this.setState('attack');
-
-    const aName = move.startsWith('punch')?ANIM.punch:ANIM.kick;
-    const mv    = MOVES[move];
-    const dur   = (mv.startup+mv.active+mv.recovery)/60; // seconds at 60fps
-    const key   = this._resolve(aName);
-    if (key && this.clips[key])
-      this.actions[key].timeScale = Math.min(this.clips[key].duration/dur, 3);
-    this.playAnim(aName, false, 0.06);
+    if (move === 'special') {
+      this.special = 0;
+      triggerSuperFlash();
+      spawnSpecialText(this);
+    }
   }
 
-  // ── Receive a hit ─────────────────────────────────────
   receiveHit(move, atkFacing) {
     if (this.state==='ko') return false;
     const mv = MOVES[move];
-
-    // Block: hold direction away from attacker
     const bk  = atkFacing===1 ? this.ctrl.left : this.ctrl.right;
     const bkey = bk.length===1?bk.toLowerCase():bk;
     if (keys[bkey] && this.onGround && mv.height==='mid') {
-      this.hp = Math.max(0,this.hp-1);
+      this.hp = Math.max(0, this.hp - 1);
       this.hitFlash = 5;
-      this.playAnim(ANIM.block, false, 0.05);
+      this.setState('block');
       return true;
     }
-
-    this.hp         = Math.max(0, this.hp-mv.damage);
+    this.hp = Math.max(0, this.hp - mv.damage);
     this.stunFrames = mv.stun;
     this.hitFlash   = 12;
-    this.px = Math.max(-ARENA_HALF, Math.min(ARENA_HALF, this.px+atkFacing*0.35));
-
-    if (this.hp<=0) { this.setState('ko'); this.playAnim(ANIM.ko, false, 0.05); }
-    else            { this.setState('hit');  this.playAnim(ANIM.hit, false, 0.05); }
+    this.px = Math.max(-ARENA_HALF, Math.min(ARENA_HALF, this.px + atkFacing*0.4));
+    if (move !== 'special') {
+      this.special = Math.min(this.maxSpecial, this.special + 6);
+    }
+    if (this.hp<=0) { this.setState('ko'); this.koTime=0; }
+    else            { this.setState('hit'); }
+    spawnDmgText(this, mv.damage, move==='special');
     return true;
   }
 
-  // ── Per-frame update ──────────────────────────────────
   update(opponent, dt) {
     this.stateFrame++;
-    if (this.hitFlash>0) this.hitFlash--;
+    if (this.hitFlash > 0) this.hitFlash--;
 
     // Gravity
     if (!this.onGround) {
-      this.vy -= GRAVITY*dt;
-      this.py += this.vy*dt;
-      if (this.py<=0) {
+      this.vy -= GRAVITY * dt;
+      this.py += this.vy * dt;
+      if (this.py <= 0) {
         this.py=0; this.vy=0; this.onGround=true;
-        if (this.state==='jump') { this.setState('idle'); this.playAnim(ANIM.idle); }
+        if (this.state==='jump') this.setState('idle');
       }
     }
 
-    if (this.state==='ko') { if(this.mixer)this.mixer.update(dt); this._applyTransform(); return; }
+    if (this.state === 'ko') {
+      this.koTime = Math.min(this.koTime + dt, 1.2);
+      this._applyTransform();
+      // Apply KO pose
+      if (!this.glbMesh) {
+        const pose = this.getPose(dt);
+        lerpPose(this.rig, pose, 0.08);
+      } else { if(this.mixer) this.mixer.update(dt); this._applyBonePose(dt); }
+      return;
+    }
 
-    // Auto-face opponent
-    if (this.state!=='attack'&&this.state!=='hit')
-      this.facing = opponent.px>this.px ? 1 : -1;
+    // Auto-face
+    if (this.state !== 'attack' && this.state !== 'hit')
+      this.facing = opponent.px > this.px ? 1 : -1;
 
     // Stun
-    if (this.stunFrames>0) {
+    if (this.stunFrames > 0) {
       this.stunFrames--;
-      if (this.stunFrames===0&&this.state==='hit') { this.setState('idle'); this.playAnim(ANIM.idle); }
-      if(this.mixer)this.mixer.update(dt); this._applyTransform(); return;
+      if (this.stunFrames===0 && this.state==='hit') this.setState('idle');
+      this._applyTransform();
+      if (!this.glbMesh) {
+        const pose = this.getPose(dt);
+        lerpPose(this.rig, pose, 0.15);
+      } else { if(this.mixer) this.mixer.update(dt); this._applyBonePose(dt); }
+      return;
     }
 
     // Attack
-    if (this.state==='attack') {
+    if (this.state === 'attack') {
       this.attackFrame++;
-      const mv=MOVES[this.currentMove];
-      // Active window — hit detection
-      if (this.attackFrame>=mv.startup && this.attackFrame<mv.startup+mv.active && !this.hitLanded) {
-        if (Math.abs(this.px-opponent.px)<=mv.range && Math.abs(this.py-opponent.py)<1.2) {
+      const mv = MOVES[this.currentMove];
+      // Add special meter on hit
+      if (this.attackFrame >= mv.startup && this.attackFrame < mv.startup+mv.active && !this.hitLanded) {
+        if (Math.abs(this.px-opponent.px) <= mv.range && Math.abs(this.py-opponent.py) < 1.2) {
           if (opponent.receiveHit(this.currentMove, this.facing)) {
             this.hitLanded = true;
-            spawnSpark((this.px+opponent.px)/2, 1.0);
+            spawnSpark((this.px+opponent.px)/2, 1.0, this.currentMove==='special');
+            if(this.currentMove!=='special')
+              this.special = Math.min(this.maxSpecial, this.special + (mv.special||5));
             const now=Date.now();
             this.comboCount = now-this.lastHitTime<1500 ? this.comboCount+1 : 1;
             this.lastHitTime = now;
-            if (this.comboCount>=2) spawnComboText(this, this.comboCount);
+            if(this.comboCount>=2) spawnComboText(this, this.comboCount);
+            triggerShake(this.currentMove==='special'?0.25:0.08, this.currentMove==='special'?18:8);
           }
         }
       }
-      // End of recovery
       if (this.attackFrame >= mv.startup+mv.active+mv.recovery) {
-        const ak=this._resolve(this.currentMove.startsWith('punch')?ANIM.punch:ANIM.kick);
-        if (ak&&this.actions[ak]) this.actions[ak].timeScale=1;
-        this.setState('idle'); this.currentMove=null; this.playAnim(ANIM.idle);
+        this.setState('idle'); this.currentMove=null;
       }
-      if(this.mixer)this.mixer.update(dt); this._applyTransform(); return;
+      this._applyTransform();
+      if (!this.glbMesh) {
+        const pose = this.getPose(dt);
+        lerpPose(this.rig, pose, 0.25);
+      } else { if(this.mixer) this.mixer.update(dt); this._applyBonePose(dt); }
+      return;
     }
 
     // Movement
-    const c=this.ctrl;
-    const lk=c.left.length===1?c.left.toLowerCase():c.left;
-    const rk=c.right.length===1?c.right.toLowerCase():c.right;
-    const jk=c.jump.length===1?c.jump.toLowerCase():c.jump;
-    const dk=c.crouch.length===1?c.crouch.toLowerCase():c.crouch;
+    const c  = this.ctrl;
+    const lk = c.left.length===1?c.left.toLowerCase():c.left;
+    const rk = c.right.length===1?c.right.toLowerCase():c.right;
+    const jk = c.jump.length===1?c.jump.toLowerCase():c.jump;
+    const dk = c.crouch.length===1?c.crouch.toLowerCase():c.crouch;
+    const speed = WALK_SPEED * this.speedMod;
     let moving=false;
 
-    if (keys[lk]) { this.px=Math.max(-ARENA_HALF,this.px-WALK_SPEED*dt); if(this.onGround)this.setState('walk'); moving=true; }
-    if (keys[rk]) { this.px=Math.min( ARENA_HALF,this.px+WALK_SPEED*dt); if(this.onGround)this.setState('walk'); moving=true; }
+    if (keys[lk]) { this.px=Math.max(-ARENA_HALF,this.px-speed*dt); if(this.onGround)this.setState('walk'); moving=true; }
+    if (keys[rk]) { this.px=Math.min( ARENA_HALF,this.px+speed*dt); if(this.onGround)this.setState('walk'); moving=true; }
 
     if (keys[jk]&&this.onGround) {
-      this.vy=JUMP_VY; this.onGround=false; this.jumpWalkT=0;
+      this.vy=JUMP_VY; this.onGround=false;
       this.setState('jump');
-      // Freeze walk anim — will be scrubbed manually
-      if (this.ready) {
-        const wk=this._resolve(ANIM.walk);
-        if (wk&&this.actions[wk]) {
-          Object.values(this.actions).forEach(a=>a.stop());
-          this.curAnim=null;
-          const wa=this.actions[wk];
-          wa.setLoop(THREE.LoopRepeat,Infinity); wa.enabled=true; wa.paused=true; wa.time=0; wa.play();
-        }
-      }
     }
 
     if (keys[dk]&&this.onGround) {
-      if(this.state!=='crouch'){ this.setState('crouch'); this.playAnim(ANIM.crouch,true,.10); }
+      if(this.state!=='crouch') this.setState('crouch');
       moving=true;
     }
 
-    if (!moving&&this.onGround&&this.state==='walk') { this.setState('idle'); this.playAnim(ANIM.idle); }
-    if (!keys[dk]&&this.state==='crouch')            { this.setState('idle'); this.playAnim(ANIM.idle); }
+    if (!moving&&this.onGround&&this.state==='walk') this.setState('idle');
+    if (!keys[dk]&&this.state==='crouch')            this.setState('idle');
 
-    // Jump: scrub walk + forward lean
-    if (this.state==='jump') {
-      this.jumpWalkT += dt*(moving?WALK_SPEED:WALK_SPEED*.55)*.8;
-      if (this.ready) this._scrubWalk(this.jumpWalkT);
-      // Lean: tilt forward on rise, back on fall
-      const lean = (this.vy>0 ? -0.20 : 0.14) * Math.min(Math.abs(this.vy)/JUMP_VY, 1);
-      this.mesh.rotation.x = lean;
-    } else {
-      this.mesh.rotation.x = 0;
-      // Un-pause walk if coming back from jump
-      const wk=this._resolve(ANIM.walk);
-      if (wk&&this.actions[wk]) this.actions[wk].paused=false;
-    }
-
-    // Idle/walk sync
-    if (this.ready&&this.state!=='jump') {
-      if (this.state==='idle') this.playAnim(ANIM.idle);
-      if (this.state==='walk') this.playAnim(ANIM.walk);
-    }
-
-    // Push fighters apart
+    // Push apart
     const gap=this.px-opponent.px;
     if (Math.abs(gap)<FIGHTER_SEP) { const p=(FIGHTER_SEP-Math.abs(gap))/2; this.px+=gap>0?p:-p; }
     this.px=Math.max(-ARENA_HALF,Math.min(ARENA_HALF,this.px));
 
-    if (this.mixer&&this.state!=='jump') this.mixer.update(dt);
     this._applyTransform();
+    if (!this.glbMesh) {
+      const pose = this.getPose(dt);
+      lerpPose(this.rig, pose, 0.18);
+    } else { if(this.mixer) this.mixer.update(dt); this._applyBonePose(dt); }
   }
 
-  tickMixer(dt) { if(this.mixer)this.mixer.update(dt); }
+  tickMixer(dt) {
+    if (!this.glbMesh) {
+      const pose = this.getPose(dt);
+      lerpPose(this.rig, pose, 0.12);
+    } else {
+      if(this.mixer) this.mixer.update(dt);
+      this._applyBonePose(dt);
+    }
+  }
+
+  // Apply procedural pose additively onto discovered skeleton bones (GLB path)
+  _applyBonePose(dt) {
+    if(!this.bones || !Object.keys(this.bones).length) return;
+    this.animTime += dt;
+    const pose = this.getPose(0);
+    const lerp = (a,b,t) => a+(b-a)*t;
+    const alpha = 0.20;
+    const applyBone = (boneKey, poseKey) => {
+      const bone = this.bones[boneKey];
+      const tgt  = pose[poseKey];
+      if(!bone || !tgt) return;
+      bone.rotation.x = lerp(bone.rotation.x, tgt.x ?? 0, alpha);
+      bone.rotation.z = lerp(bone.rotation.z, tgt.z ?? 0, alpha);
+    };
+    applyBone('spine',     'torso');
+    applyBone('chest',     'chest');
+    applyBone('head',      'head');
+    applyBone('lShoulder', 'lShoulder');
+    applyBone('lElbow',    'lElbow');
+    applyBone('rShoulder', 'rShoulder');
+    applyBone('rElbow',    'rElbow');
+    applyBone('lHip',      'lHip');
+    applyBone('lKnee',     'lKnee');
+    applyBone('rHip',      'rHip');
+    applyBone('rKnee',     'rKnee');
+  }
 
   _applyTransform() {
-    this.mesh.position.set(this.px, this.py, 0);
-    if (this.state!=='jump') this.mesh.rotation.y = this.facing===1?0:Math.PI;
-    // Shadow shrinks and fades as fighter rises
+    if (this.glbPivot) {
+      // GLB path: pivot.position.y already contains the feet-lift offset baked in applyGLTF.
+      // We store it so we can add the jump height on top.
+      this.glbPivot.position.x  = this.px;
+      this.glbPivot.position.y  = this.glbFeetY + this.py;
+      this.glbPivot.position.z  = 0;
+      this.glbPivot.rotation.y  = this.facing===1 ? 0 : Math.PI;
+    } else {
+      this.rig.root.position.set(this.px, this.py, 0);
+      this.rig.root.rotation.y  = this.facing===1 ? 0 : Math.PI;
+    }
     const s=Math.max(0.25, 1-this.py*.14);
     this.shadow.position.set(this.px, .003, 0);
     this.shadow.scale.setScalar(s);
     this.shadow.material.opacity=.38*s;
   }
 
-  destroy() { scene.remove(this.mesh); scene.remove(this.shadow); }
+  destroy() {
+    // Remove both pivot (glb) and procedural rig root
+    if(this.glbPivot) scene.remove(this.glbPivot);
+    scene.remove(this.rig.root);
+    scene.remove(this.shadow);
+  }
 }
 
 // ═══════════════════════════════════════════════════════
@@ -790,6 +1381,8 @@ class Fighter {
 // ═══════════════════════════════════════════════════════
 const bar1El  = document.getElementById('bar1');
 const bar2El  = document.getElementById('bar2');
+const sp1El   = document.getElementById('sp1');
+const sp2El   = document.getElementById('sp2');
 const timerEl = document.getElementById('timer-box');
 const pips = {
   p1:[document.getElementById('p1w1'),document.getElementById('p1w2')],
@@ -803,26 +1396,49 @@ function updateHUD() {
     el.className='bar-fill'+(pct<25?' low':pct<50?' med':'');
   };
   setBar(p1,bar1El); setBar(p2,bar2El);
-  timerEl.textContent=Math.ceil(roundTimer);
+
+  const setSp=(f,el)=>{
+    const pct=Math.max(0,f.special/f.maxSpecial*100);
+    el.style.width=pct+'%';
+    el.className='special-fill'+(pct>=100?' ready':'');
+  };
+  setSp(p1,sp1El); setSp(p2,sp2El);
+
+  const t = Math.ceil(roundTimer);
+  timerEl.textContent = t;
+  timerEl.className = t <= 10 ? 'urgent' : '';
+
   [[p1Rounds,pips.p1],[p2Rounds,pips.p2]].forEach(([wins,ps])=>{
     ps.forEach((pip,i)=>pip.classList.toggle('filled',i<wins));
   });
 }
 
 // ═══════════════════════════════════════════════════════
-//  ANNOUNCER  +  COMBO TEXT
+//  ANNOUNCER + TEXTS
 // ═══════════════════════════════════════════════════════
 const annEl = document.getElementById('announcer-text');
 let annTimer = 0;
 function showAnn(txt,frames=100){ annEl.textContent=txt; annEl.classList.add('show'); annTimer=frames; }
 function hideAnn(){ annEl.classList.remove('show'); }
 
-function spawnComboText(fighter,n){
+function spawnComboText(fighter, n) {
   const el=document.createElement('div');
-  el.className='combo-pop'; el.textContent=`${n} HIT!`;
-  el.style.left=fighter===p1?'80px':'820px'; el.style.top='200px';
+  el.className='combo-pop';
+  el.textContent=`${n} HIT!`;
+  el.style.left=fighter===p1?'80px':'780px';
+  el.style.top='180px';
   document.getElementById('gameWrap').appendChild(el);
   setTimeout(()=>el.remove(),1200);
+}
+
+function spawnSpecialText(fighter) {
+  const el = document.createElement('div');
+  el.className = 'special-pop';
+  el.textContent = ROSTER.find(r=>r.label===fighter.label)?.special || '¡ESPECIAL!';
+  el.style.left = fighter===p1 ? '60px' : '650px';
+  el.style.top  = '140px';
+  document.getElementById('gameWrap').appendChild(el);
+  setTimeout(()=>el.remove(), 1500);
 }
 
 // ═══════════════════════════════════════════════════════
@@ -839,17 +1455,17 @@ function hideScreens(){
 // ═══════════════════════════════════════════════════════
 //  CHARACTER SELECT
 // ═══════════════════════════════════════════════════════
-// Build cards
 ROSTER.forEach(r=>{
   const card=document.createElement('div');
   card.className='char-card'; card.id=`card_${r.key}`;
   card.innerHTML=`
     <div class="badge b1">P1</div>
     <div class="badge b2">P2</div>
-    <div style="font-size:50px;margin-bottom:10px;">${r.emoji}</div>
+    <div style="font-size:48px;margin-bottom:10px;">${r.emoji}</div>
     <div style="font-family:'Black Han Sans',sans-serif;font-size:15px;
                 letter-spacing:3px;color:${r.color};">${r.label}</div>
-    <div style="font-size:10px;color:#383838;margin-top:8px;letter-spacing:1px;">${r.desc}</div>
+    <div style="font-size:9px;color:#383838;margin-top:4px;letter-spacing:1px;">${r.desc}</div>
+    <div style="font-size:8px;color:#555;margin-top:6px;">HP: ${'▮'.repeat(Math.round(r.hpMod*5))} SPD: ${'▮'.repeat(Math.round(r.speedMod*5))}</div>
   `;
   document.getElementById('charCards').appendChild(card);
 });
@@ -885,7 +1501,6 @@ document.addEventListener('keydown', e=>{
   if(sel.p1ok&&sel.p2ok) setTimeout(launchFight,350);
 });
 
-// Buttons on game over
 document.getElementById('btnRematch').addEventListener('click',()=>{
   hideScreens(); round=1; p1Rounds=0; p2Rounds=0; launchFight();
 });
@@ -901,51 +1516,68 @@ document.getElementById('btnReselect').addEventListener('click',()=>{
 let p1=null, p2=null;
 let round=1, p1Rounds=0, p2Rounds=0;
 let roundTimer=99, timerAccum=0;
-let gamePhase='loading';   // loading|select|announce|fight|roundover|gameover
+let gamePhase='loading';
 let phaseFrames=0;
+const preloadedGLTF = {};
 
-const preloadedGLTF = {};   // key → THREE.GLTF
-
-// Preload all models once at startup
 function preloadModels(onDone){
+  // If no GLTFLoader available, skip straight to game
+  if(!THREE.GLTFLoader){ onDone(); return; }
+
   const loader = new THREE.GLTFLoader();
   const ks = Object.keys(GLB_PATHS);
   let done=0;
+  let finished=false;
+
+  const finish = () => {
+    if(finished) return;
+    finished = true;
+    // Torero has no baked animations — share karateka's clips
+    if(preloadedGLTF.torero && preloadedGLTF.karateka &&
+       preloadedGLTF.torero.animations && preloadedGLTF.torero.animations.length===0){
+      preloadedGLTF.torero._sharedAnims = preloadedGLTF.karateka.animations;
+    }
+    if(!preloadedGLTF.torero && preloadedGLTF.karateka)
+      preloadedGLTF.torero = preloadedGLTF.karateka;
+    document.getElementById('loadBar').style.width='100%';
+    document.getElementById('loadMsg').textContent='¡LISTO!';
+    setTimeout(onDone, 400);
+  };
+
   const tick=(key,gltf)=>{
     if(gltf) preloadedGLTF[key]=gltf;
     done++;
     document.getElementById('loadBar').style.width=(done/ks.length*100)+'%';
     document.getElementById('loadMsg').textContent =
       done<ks.length ? `CARGANDO... ${done}/${ks.length}` : '¡LISTO!';
-    if(done>=ks.length){
-      // Fallback: if torero.glb missing, reuse karateka model for P2
-      if(!preloadedGLTF.torero && preloadedGLTF.karateka){
-        console.log('torero.glb no encontrado — usando karateka como P2');
-        preloadedGLTF.torero = preloadedGLTF.karateka;
-      }
-      setTimeout(onDone,500);
-    }
+    if(done>=ks.length) finish();
   };
-  ks.forEach(k=>loader.load(GLB_PATHS[k],
-    g=>tick(k,g),
-    null,
-    e=>{ console.warn('GLB no cargado:',GLB_PATHS[k],e); tick(k,null); }
-  ));
+
+  // Hard timeout: if models don't load in 3s, proceed anyway with procedural rigs
+  setTimeout(()=>{
+    if(!finished){
+      console.warn('Timeout de carga — usando rigs procedurales');
+      document.getElementById('loadMsg').textContent='USANDO DISEÑO BASE';
+      finish();
+    }
+  }, 3000);
+
+  ks.forEach(k=>{
+    try {
+      loader.load(GLB_PATHS[k], g=>tick(k,g), null, e=>{ console.warn('GLB no encontrado:',k); tick(k,null); });
+    } catch(e) { tick(k,null); }
+  });
 }
 
 function createFighters(){
   if(p1) p1.destroy();
   if(p2) p2.destroy();
-
   const r1=ROSTER[sel.p1], r2=ROSTER[sel.p2];
   const hex=s=>parseInt(s.replace('#',''),16);
-
-  p1=new Fighter(-2,  1, p1ctrl, hex(r1.color), hex(r1.accent), r1.label);
-  p2=new Fighter( 2, -1, p2ctrl, hex(r2.color), hex(r2.accent), r2.label);
-
+  p1=new Fighter(-2, 1, p1ctrl, hex(r1.color), hex(r1.accent), r1.label, r1.key, r1.hpMod, r1.speedMod);
+  p2=new Fighter( 2,-1, p2ctrl, hex(r2.color), hex(r2.accent), r2.label, r2.key, r2.hpMod, r2.speedMod);
   if(preloadedGLTF[r1.key]) p1.applyGLTF(preloadedGLTF[r1.key]);
   if(preloadedGLTF[r2.key]) p2.applyGLTF(preloadedGLTF[r2.key]);
-
   document.getElementById('name1').textContent=r1.label;
   document.getElementById('name2').textContent=r2.label;
 }
@@ -963,11 +1595,9 @@ function endRound(winner){
   if(gamePhase==='roundover'||gamePhase==='gameover') return;
   gamePhase='roundover';
   const r1=ROSTER[sel.p1], r2=ROSTER[sel.p2];
-
-  if(winner===1){ p1Rounds++; p1.playAnim(ANIM.win,true); showAnn(`${r1.label} WINS!`,150); }
-  else if(winner===2){ p2Rounds++; p2.playAnim(ANIM.win,true); showAnn(`${r2.label} WINS!`,150); }
+  if(winner===1){ p1Rounds++; showAnn(`${r1.label} WINS!`,150); }
+  else if(winner===2){ p2Rounds++; showAnn(`${r2.label} WINS!`,150); }
   else showAnn('EMPATE',150);
-
   setTimeout(()=>{
     hideAnn();
     if(p1Rounds>=2||p2Rounds>=2){
@@ -995,7 +1625,17 @@ let lastTs = null;
     light.intensity=1.3+f;
   });
 
-  // Phase logic
+  // Camera shake
+  if (cameraShake.dur > 0) {
+    cameraShake.dur--;
+    const i = cameraShake.intensity * (cameraShake.dur / 12);
+    camera.position.x = (Math.random()-0.5) * i * 2;
+    camera.position.y = 2.8 + (Math.random()-0.5) * i;
+  } else {
+    camera.position.x = 0;
+    camera.position.y = 2.8;
+  }
+
   switch(gamePhase){
     case 'announce':
       phaseFrames++;
@@ -1026,7 +1666,7 @@ let lastTs = null;
       break;
   }
 
-  // Hit-flash emissive tint
+  // Hit-flash emissive
   [p1,p2].forEach(f=>{
     if(!f) return;
     f.mesh.traverse(c=>{
@@ -1034,7 +1674,7 @@ let lastTs = null;
       const ms=Array.isArray(c.material)?c.material:[c.material];
       ms.forEach(m=>{
         if(!m?.emissive) return;
-        if(f.hitFlash>0&&f.hitFlash%2===0){ m.emissive.set(0xff2200); m.emissiveIntensity=.75; }
+        if(f.hitFlash>0&&f.hitFlash%2===0){ m.emissive.set(0xff2200); m.emissiveIntensity=.9; }
         else { m.emissive.set(0); m.emissiveIntensity=0; }
       });
     });
